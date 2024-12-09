@@ -7,7 +7,9 @@
 import board
 import digitalio
 import neopixel
+import os
 import time
+import wifi
 
 _led = None
 _neo = None
@@ -68,6 +70,26 @@ def init() -> None:
     _neo.brightness = 1
     _boot_btn = digitalio.DigitalInOut(board.D0)
     _boot_btn.switch_to_input(pull = digitalio.Pull.UP)
+
+def init_wifi() -> None:
+    print("@@ WiFI setup")
+    # Get wifi AP credentials from onboard settings.toml file
+    wifi_ssid = os.getenv("CIRCUITPY_WIFI_SSID")
+    wifi_password = os.getenv("CIRCUITPY_WIFI_PASSWORD")
+    print("@@ WiFI SSID:", wifi_ssid)
+    if wifi_ssid is None:
+        print("@@ WiFI credentials are kept in settings.toml, please add them there!")
+        raise ValueError("WiFI SSID not found in environment variables")
+
+    try:
+        wifi.radio.connect(wifi_ssid, wifi_password)
+    except ConnectionError:
+        print("@@ WiFI Failed to connect to WiFi with provided credentials")
+        raise
+    print("@@ WiFI OK for", wifi_ssid)
+
+def init_mqtt() -> None:
+    pass
 
 def loop() -> None:
     print("@@ loop")
@@ -158,6 +180,8 @@ def loop() -> None:
 
 if __name__ == "__main__":
     init()
+    init_wifi()
+    init_mqtt()
     loop()
 
 
