@@ -10,10 +10,13 @@ import neopixel
 import os
 import time
 import wifi
+import sequencer
 
 _led = None
 _neo = None
 _boot_btn = None
+
+NEO_LEN = 100
 
 COL_OFF = (0, 0, 0)
 COL_RED = (255, 0, 0)
@@ -66,7 +69,7 @@ def init() -> None:
     global _boot_btn
     _led = neopixel.NeoPixel(board.NEOPIXEL, 1)
     _led.brightness = 0.1
-    _neo = neopixel.NeoPixel(board.A1, 100, auto_write = False, pixel_order=(0, 1, 2))
+    _neo = neopixel.NeoPixel(board.A1, NEO_LEN, auto_write = False, pixel_order=(0, 1, 2))
     _neo.brightness = 1
     _boot_btn = digitalio.DigitalInOut(board.D0)
     _boot_btn.switch_to_input(pull = digitalio.Pull.UP)
@@ -103,6 +106,8 @@ def loop() -> None:
 
     _led.fill(COL_GREEN)
 
+    seq = sequencer.Sequencer(sequencer.NeoWrapper(_neo, NEO_LEN))
+
     i = 0
     n = 0
     ic = 0
@@ -130,23 +135,23 @@ def loop() -> None:
 
         # Orange chase
         elif effect == 1:
-            for j in range(0, 100):
+            for j in range(0, NEO_LEN):
                 _neo[j] = COL_ORANGE if (j >= i and j <= i+10) else COL_OFF
             _neo.show()
-            i = (i + 1) % (100 - 10)
+            i = (i + 1) % (NEO_LEN - 10)
             time.sleep(0.1)
         
         # Green Red Chase
         elif effect == 2:
-            for j in range(0, 100):
+            for j in range(0, NEO_LEN):
                 _neo[j] = COL_GREEN if (i + j) % 20 > 10 else COL_RED
             _neo.show()
-            i = (i + 1) % 100
+            i = (i + 1) % NEO_LEN
             time.sleep(0.1)
 
         # Green Red Static
         elif effect == 3:
-            for j in range(0, 100):
+            for j in range(0, NEO_LEN):
                 _neo[j] = COL_RED if (0 + j) % 20 > 10 else COL_GREEN
             _neo.show()
             i = i + 1
@@ -158,7 +163,7 @@ def loop() -> None:
             time.sleep(0.1)
 
         elif effect == 5:
-            for j in range(0, 100):
+            for j in range(0, NEO_LEN):
                 _neo[j] = COL_RED if (i + j) % 20 > 10 else COL_GREEN
             _neo.show()
             i = i - 1
