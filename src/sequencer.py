@@ -5,7 +5,7 @@ import time
 
 class NeoWrapper:
     def __init__(self, target, len):
-        self.data = [ (0,0,0) ] * len
+        self.data = [ target[i] for i in range(0, len) ]
         self.len = len
         self._target = target
 
@@ -74,6 +74,7 @@ class InstructionSlide(Instruction):
         super().__init__(neo)
         self._delay = delay
         self._count = count
+        self._data = None
 
     def __eq__(self, rhs):
         if not isinstance(rhs, self.__class__):
@@ -84,12 +85,43 @@ class InstructionSlide(Instruction):
     def __repr__(self):
         return f"Slide {self._delay} s x {self._count}"
 
+    def start(self) -> Instruction:
+        self._data = self._count
+        return self.step()
+
+    def step(self) -> Instruction:
+        if self._data is None:
+            return None
+        count = self._data
+        nl = self._neo.len
+        delay = self._delay
+        if delay >= 0:
+            first = self._neo.data[0]
+            self._neo.data[0 : nl-1] = self._neo.data[1 : nl]
+            self._neo.data[-1] = first
+        else:
+            delay = -delay
+            last = self._neo.data[-1]
+            self._neo.data[1 : nl] = self._neo.data[0 : nl-1]
+            self._neo.data[0] = last
+        self._neo.copy()
+        self._neo.show()
+        self._neo.sleep(delay)
+        count -= 1
+        if count > 0:
+            self._data = count
+            return self
+        # This instruction is completed
+        self._data = None
+        return None
+
 
 class InstructionFill(Instruction):
     def __init__(self, neo: NeoWrapper, delay: float, runs: list[RgbCount]):
         super().__init__(neo)
         self._delay = delay
         self._runs = runs
+        self._data = None
 
     def __eq__(self, rhs):
         if not isinstance(rhs, self.__class__):
@@ -103,28 +135,53 @@ class InstructionFill(Instruction):
         return f"Fill {self._delay} s x {self._runs}"
 
     def start(self) -> Instruction:
-        if self._delay <= 0:
-            # Instant fill
-            run_index = 0
-            curr_rgb = None
-            curr_count = 0
-            for i in range(0, self._neo.len):
-                if curr_rgb is None:
-                    run_curr = self._runs[run_index]
-                    curr_rgb = run_curr.rgb.asTuple()
-                    curr_count = run_curr.count
-                    run_index += 1
-                    if run_index == len(self._runs):
-                        run_index = 0
-                self._neo.data[i] = curr_rgb
-                curr_count -= 1
-                if curr_count <= 0:
-                    curr_rgb = None
+        # Instant fill
+        self._data = (0, 0, 0, None)
+        if self._delay == 0:
+            # Make it an instant fill, bypass delays
+            while self._step():
+                pass
             self._neo.copy()
             self._neo.show()
-        return None
+            # This instruction is completed
+            return None
+        else:
+            # Just execute the first step with its delay
+            return self.step()
+
+    def _step(self) -> bool:
+        if self._data is None:
+            return False
+        index, run_index, curr_count, curr_rgb = self._data
+        if index >= self._neo.len:
+            return False
+        if curr_rgb is None:
+            run_curr = self._runs[run_index]
+            curr_rgb = run_curr.rgb.asTuple()
+            curr_count = run_curr.count
+            run_index += 1
+            if run_index == len(self._runs):
+                run_index = 0
+        self._neo.data[index] = curr_rgb
+        curr_count -= 1
+        if curr_count <= 0:
+            curr_rgb = None
+        index += 1
+        if index <= self._neo.len:
+            self._data = (index, run_index, curr_count, curr_rgb)
+            return True
+        else:
+            self._data = None
+            return False
 
     def step(self) -> Instruction:
+        if self._data is not None:
+            if self._step():
+                self._neo.copy()
+                self._neo.show()
+                self._neo.sleep(self._delay)
+                return self
+        # This instruction is completed
         return None
 
 
@@ -169,14 +226,15 @@ class Sequencer():
             else:
                 raise ValueError("Sequencer: Unknown command '%s' in line '%s'" % (verb, line))
 
-    def step(self) -> None:
+    def step(self) -> bool:
         if self._current is None:
             if self._pc >= len(self._instructions):
-                return
-            self._pc += 1
+                return False
             self._current = self._instructions[self._pc]
             self._current = self._current.start()
+            self._pc += 1
         else:
             self._current = self._current.step()
+        return True
 
 #~~

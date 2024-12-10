@@ -21,10 +21,10 @@ class MockNeoWrapper(NeoWrapper):
     def sleep(self, seconds: float):
         self.sleep_total += seconds
 
-    def assertExpects(self, num_copy, num_show, sleep_total):
-        assert(self.num_copy == num_copy)
-        assert(self.num_show == num_show)
-        assert(self.sleep_total == sleep_total)
+    def assertExpects(self, case, num_copy, num_show, sleep_total):
+        case.assertEqual(self.num_copy, num_copy)
+        case.assertEqual(self.num_show, num_show)
+        case.assertEqual(self.sleep_total, sleep_total)
 
 
 class TestRgb(unittest.TestCase):
@@ -66,7 +66,7 @@ class TestInstructionFill(unittest.TestCase):
     def test_fill_static(self):
         nw = MockNeoWrapper([(0,0,0)] * 11, 11)
         i = InstructionFill(nw, delay=0, runs=[RgbCount("FF0000", 1), RgbCount("00FF00", 2), RgbCount("0000FF", 3)])
-        self.assertEqual(i.start(), None)
+        self.assertIsNone(i.start())
         self.assertEqual(nw._target, [
             (0xFF,    0,    0),
             (   0, 0xFF,    0),
@@ -80,8 +80,89 @@ class TestInstructionFill(unittest.TestCase):
             (   0,    0, 0xFF),
             (   0,    0, 0xFF),
         ])
-        self.assertEqual(i.step(), None)
-        nw.assertExpects(num_copy=1, num_show=1, sleep_total=0)
+        self.assertIsNone(i.step())
+        nw.assertExpects(self, num_copy=1, num_show=1, sleep_total=0)
+
+    def test_slow_fill(self):
+        nw = MockNeoWrapper([(0,0,0)] * 4, 4)
+        i = InstructionFill(nw, delay=0.25, runs=[RgbCount("FF0000", 1), RgbCount("00FF00", 2)])
+
+        self.assertEqual(i.start(), i)
+        self.assertEqual(nw._target, [
+            (0xFF,    0,    0),
+            (   0,    0,    0),
+            (   0,    0,    0),
+            (   0,    0,    0),
+        ])
+        nw.assertExpects(self, num_copy=1, num_show=1, sleep_total=0.25)
+
+        self.assertEqual(i.step(), i)
+        self.assertEqual(nw._target, [
+            (0xFF,    0,    0),
+            (   0, 0xFF,    0),
+            (   0,    0,    0),
+            (   0,    0,    0),
+        ])
+        nw.assertExpects(self, num_copy=2, num_show=2, sleep_total=0.50)
+
+        self.assertEqual(i.step(), i)
+        self.assertEqual(nw._target, [
+            (0xFF,    0,    0),
+            (   0, 0xFF,    0),
+            (   0, 0xFF,    0),
+            (   0,    0,    0),
+        ])
+        nw.assertExpects(self, num_copy=3, num_show=3, sleep_total=0.75)
+
+        self.assertEqual(i.step(), i)
+        self.assertEqual(nw._target, [
+            (0xFF,    0,    0),
+            (   0, 0xFF,    0),
+            (   0, 0xFF,    0),
+            (0xFF,    0,    0),
+        ])
+        nw.assertExpects(self, num_copy=4, num_show=4, sleep_total=1.00)
+
+        self.assertIsNone(i.step())
+        nw.assertExpects(self, num_copy=4, num_show=4, sleep_total=1.00)
+
+
+class TestInstructionSlide(unittest.TestCase):
+    def test_slide(self):
+        nw = MockNeoWrapper([(0,0,0), (1,1,1), (2,2,2), (3,3,3), (4,4,4)], 5)
+        i = InstructionSlide(nw, delay=0.5, count=8)
+
+        self.assertEqual(i.start(), i)
+        self.assertEqual(nw._target, [(1,1,1), (2,2,2), (3,3,3), (4,4,4), (0,0,0), ])
+        nw.assertExpects(self, num_copy=1, num_show=1, sleep_total=0.5)
+
+        self.assertEqual(i.step(), i)
+        self.assertEqual(nw._target, [(2,2,2), (3,3,3), (4,4,4), (0,0,0), (1,1,1), ])
+        nw.assertExpects(self, num_copy=2, num_show=2, sleep_total=1.0)
+
+        self.assertEqual(i.step(), i)
+        self.assertEqual(nw._target, [(3,3,3), (4,4,4), (0,0,0), (1,1,1), (2,2,2), ])
+        nw.assertExpects(self, num_copy=3, num_show=3, sleep_total=1.5)
+
+        self.assertEqual(i.step(), i)
+        self.assertEqual(nw._target, [(4,4,4), (0,0,0), (1,1,1), (2,2,2), (3,3,3), ])
+        nw.assertExpects(self, num_copy=4, num_show=4, sleep_total=2.0)
+
+        self.assertEqual(i.step(), i)
+        self.assertEqual(nw._target, [(0,0,0), (1,1,1), (2,2,2), (3,3,3), (4,4,4), ])
+        nw.assertExpects(self, num_copy=5, num_show=5, sleep_total=2.5)
+
+        self.assertEqual(i.step(), i)
+        self.assertEqual(nw._target, [(1,1,1), (2,2,2), (3,3,3), (4,4,4), (0,0,0), ])
+        nw.assertExpects(self, num_copy=6, num_show=6, sleep_total=3.0)
+
+        self.assertEqual(i.step(), i)
+        self.assertEqual(nw._target, [(2,2,2), (3,3,3), (4,4,4), (0,0,0), (1,1,1), ])
+        nw.assertExpects(self, num_copy=7, num_show=7, sleep_total=3.5)
+
+        self.assertIsNone(i.step())
+        self.assertEqual(nw._target, [(3,3,3), (4,4,4), (0,0,0), (1,1,1), (2,2,2), ])
+        nw.assertExpects(self, num_copy=8, num_show=8, sleep_total=4.0)
 
 
 class TestSequencer(unittest.TestCase):
