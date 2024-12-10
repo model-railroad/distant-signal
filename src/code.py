@@ -94,94 +94,48 @@ def init_wifi() -> None:
 def init_mqtt() -> None:
     pass
 
+_blink_idx = 0
+def blink() -> None:
+    global _blink_idx
+    if _blink_idx:
+        _led.brightness = 0
+        _blink_idx = 1
+    else:
+        _led.brightness = 0.1
+        _blink_idx = 0
+
+
 def loop() -> None:
     print("@@ loop")
     pass
 
     # # Sleep a few seconds at boot
-    # for i in range(0, 3):
-    #     print(i)
-    #     set_neopixels(i % 2 == 0, 0)
-    #     time.sleep(1)
+    for i in range(0, 3):
+        print(i)
+        blink()
+        time.sleep(1)
 
     _led.fill(COL_GREEN)
+    _neo.fill(COL_OFF)
 
     seq = sequencer.Sequencer(sequencer.NeoWrapper(_neo, NEO_LEN))
 
-    i = 0
-    n = 0
-    ic = 0
-    effect = 3
+    blink()
+    seq.parse("Fill #000000 1 ; SlowFill 0.1  #00FF00 10  #FF0000 10 ;")
+    while seq.step():
+        blink()
+
+    seq.parse("Slide -0.1 80 ")
+    while seq.step():
+        blink()
+
     while True:
-        _led.brightness = 0.1 if i & 2 == 0 else 0
-        # _led.fill(COL_RED)
-        # time.sleep(0.5)
-        # _led.fill(COL_GREEN)
-        # time.sleep(0.5)
-        # _led.fill(COL_BLUE)
-        # time.sleep(0.5)
-        # _led.brightness = 0
-
-        print(effect, i)
-
-        # Cycle through COLS
-        if effect == 0:
-            c = COLS[ic]
-            _neo.fill(c)
-            _neo.show()
-            ic = (ic+1) % len(COLS)
-            print(ic, c)
+        if not _boot_btn.value:
+            seq.rerun()
+        if not seq.step():
             time.sleep(0.25)
+            blink()
 
-        # Orange chase
-        elif effect == 1:
-            for j in range(0, NEO_LEN):
-                _neo[j] = COL_ORANGE if (j >= i and j <= i+10) else COL_OFF
-            _neo.show()
-            i = (i + 1) % (NEO_LEN - 10)
-            time.sleep(0.1)
-        
-        # Green Red Chase
-        elif effect == 2:
-            for j in range(0, NEO_LEN):
-                _neo[j] = COL_GREEN if (i + j) % 20 > 10 else COL_RED
-            _neo.show()
-            i = (i + 1) % NEO_LEN
-            time.sleep(0.1)
-
-        # Green Red Static
-        elif effect == 3:
-            for j in range(0, NEO_LEN):
-                _neo[j] = COL_RED if (0 + j) % 20 > 10 else COL_GREEN
-            _neo.show()
-            i = i + 1
-            #time.sleep(0.1)
-            effect = 4
-
-        elif effect == 4:
-            i = i + 1
-            time.sleep(0.1)
-
-        elif effect == 5:
-            for j in range(0, NEO_LEN):
-                _neo[j] = COL_RED if (i + j) % 20 > 10 else COL_GREEN
-            _neo.show()
-            i = i - 1
-            time.sleep(0.1)
-
-        n = n + 1
-        if effect == 4:
-            if not _boot_btn.value:
-                effect = 5
-                i = 0
-                n = 0
-        elif effect == 5 and n >= 80:
-            effect = 3
-            n = 0
-            i = 0
-        elif (effect == 0 and n > 8) or (effect > 0 and effect <= 2 and n > 32):
-            effect = (effect + 1) % 3
-            n = 0
 
 if __name__ == "__main__":
     init()

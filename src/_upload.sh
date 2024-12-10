@@ -2,10 +2,12 @@
 set -e
 D="/d /f /cygdrive/f"
 C="code.py"
+S="sequencer.py"
 
 for d in $D; do
     if [[ -f "$d/$C" ]]; then
         echo "OK: Using $d/$C"
+        cp -v "$S" "$d/$S"
         cp -v "$C" "$d/$C"
         exit 0
     fi

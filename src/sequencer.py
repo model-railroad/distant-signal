@@ -1,6 +1,17 @@
+# LED NeoPixel Sequencer
+# 2024 (c) ralfoide at gmail
+# License: MIT
 #
+# Target Platform: CircuitPython 9.x on AdaFruit QT PY ESP32-S2
+#
+# Example usage:
+# _neo = neopixel.NeoPixel(board.A1, NEO_LEN, auto_write = False, pixel_order=(0, 1, 2))
+# seq = sequencer.Sequencer(sequencer.NeoWrapper(_neo, NEO_LEN))
+# seq.parse(""" Fill #000000 1 ; 
+#               SlowFill 0.1  #00FF00 10  #FF0000 10 ;
+#               Slide 0.1 80 """)
+# while seq.step(): True
 
-import re
 import time
 
 class NeoWrapper:
@@ -192,13 +203,17 @@ class Sequencer():
 
     def reset(self) -> None:
         self._instructions = []
+        self.rerun()
+    
+    def rerun(self):
         self._current = None
         self._pc = 0
 
     def parse(self, instructions: str) -> None:
         self.reset()
         for line in instructions.split(";"):
-            lexems = re.split(r"\s+", line.strip())
+            # We don't have re.split(r"\s+", str) on CircuitPython
+            lexems = [ x for x in line.strip().split(" ") if x ]
             if not lexems or lexems[0].startswith("#"):
                 # Skip empty line or comment.
                 continue
