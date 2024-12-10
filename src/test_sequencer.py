@@ -65,7 +65,7 @@ class TestRgbCount(unittest.TestCase):
 class TestInstructionFill(unittest.TestCase):
     def test_fill_static(self):
         nw = MockNeoWrapper([(0,0,0)] * 11, 11)
-        i = InstructionFill(nw, delay=0, runs=[RgbCount("FF0000", 1), RgbCount("00FF00", 2), RgbCount("0000FF", 3)])
+        i = InstructionFill(nw, delay_s=0, runs=[RgbCount("FF0000", 1), RgbCount("00FF00", 2), RgbCount("0000FF", 3)])
         self.assertIsNone(i.start())
         self.assertEqual(nw._target, [
             (0xFF,    0,    0),
@@ -85,7 +85,7 @@ class TestInstructionFill(unittest.TestCase):
 
     def test_slow_fill(self):
         nw = MockNeoWrapper([(0,0,0)] * 4, 4)
-        i = InstructionFill(nw, delay=0.25, runs=[RgbCount("FF0000", 1), RgbCount("00FF00", 2)])
+        i = InstructionFill(nw, delay_s=0.25, runs=[RgbCount("FF0000", 1), RgbCount("00FF00", 2)])
 
         self.assertEqual(i.start(), i)
         self.assertEqual(nw._target, [
@@ -130,7 +130,7 @@ class TestInstructionFill(unittest.TestCase):
 class TestInstructionSlide(unittest.TestCase):
     def test_slide(self):
         nw = MockNeoWrapper([(0,0,0), (1,1,1), (2,2,2), (3,3,3), (4,4,4)], 5)
-        i = InstructionSlide(nw, delay=0.5, count=8)
+        i = InstructionSlide(nw, delay_s=-0.5, count=8)
 
         self.assertEqual(i.start(), i)
         self.assertEqual(nw._target, [(1,1,1), (2,2,2), (3,3,3), (4,4,4), (0,0,0), ])
@@ -171,9 +171,9 @@ class TestSequencer(unittest.TestCase):
         s = Sequencer(nw)
         s.parse("Fill #FF0000 2  #00FF00 3  #0000FF 4 ; Slide 0.5 42 ; SlowFill 0.42 #FFEEDD 10  #FF0000 11  #00FF00 12  #0000FF 13")
         self.assertEqual(s._instructions, [
-            InstructionFill(nw, delay=0, runs=[RgbCount("FF0000", 2), RgbCount("00FF00", 3), RgbCount("0000FF", 4)]),
-            InstructionSlide(nw, delay=0.5, count=42),
-            InstructionFill(nw, delay=0.42, runs=[RgbCount("FFEEDD", 10), RgbCount("FF0000", 11), RgbCount("00FF00", 12), RgbCount("0000FF", 13)]),
+            InstructionFill(nw, delay_s=0, runs=[RgbCount("FF0000", 2), RgbCount("00FF00", 3), RgbCount("0000FF", 4)]),
+            InstructionSlide(nw, delay_s=0.5, count=42),
+            InstructionFill(nw, delay_s=0.42, runs=[RgbCount("FFEEDD", 10), RgbCount("FF0000", 11), RgbCount("00FF00", 12), RgbCount("0000FF", 13)]),
         ])
 
 

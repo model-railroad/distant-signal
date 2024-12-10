@@ -125,7 +125,7 @@ def loop() -> None:
     while seq.step():
         blink()
 
-    seq.parse("Slide -0.1 80 ")
+    seq.parse("Slide 0.1 80 ")
     while seq.step():
         blink()
 

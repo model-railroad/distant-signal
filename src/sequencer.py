@@ -81,9 +81,9 @@ class Instruction:
 
 
 class InstructionSlide(Instruction):
-    def __init__(self, neo: NeoWrapper, delay: float, count: int):
+    def __init__(self, neo: NeoWrapper, delay_s: float, count: int):
         super().__init__(neo)
-        self._delay = delay
+        self._delay_s = delay_s
         self._count = count
         self._data = None
 
@@ -91,10 +91,10 @@ class InstructionSlide(Instruction):
         if not isinstance(rhs, self.__class__):
             return NotImplemented
         return (self._count == rhs._count
-            and self._delay == rhs._delay)
+            and self._delay_s == rhs._delay_s)
 
     def __repr__(self):
-        return f"Slide {self._delay} s x {self._count}"
+        return f"Slide {self._delay_s} s x {self._count}"
 
     def start(self) -> Instruction:
         self._data = self._count
@@ -105,19 +105,19 @@ class InstructionSlide(Instruction):
             return None
         count = self._data
         nl = self._neo.len
-        delay = self._delay
-        if delay >= 0:
+        delay_s = self._delay_s
+        if delay_s < 0:
+            delay_s = -delay_s
             first = self._neo.data[0]
             self._neo.data[0 : nl-1] = self._neo.data[1 : nl]
             self._neo.data[-1] = first
         else:
-            delay = -delay
             last = self._neo.data[-1]
             self._neo.data[1 : nl] = self._neo.data[0 : nl-1]
             self._neo.data[0] = last
         self._neo.copy()
         self._neo.show()
-        self._neo.sleep(delay)
+        self._neo.sleep(delay_s)
         count -= 1
         if count > 0:
             self._data = count
@@ -128,9 +128,9 @@ class InstructionSlide(Instruction):
 
 
 class InstructionFill(Instruction):
-    def __init__(self, neo: NeoWrapper, delay: float, runs: list[RgbCount]):
+    def __init__(self, neo: NeoWrapper, delay_s: float, runs: list[RgbCount]):
         super().__init__(neo)
-        self._delay = delay
+        self._delay_s = delay_s
         self._runs = runs
         self._data = None
 
@@ -140,15 +140,15 @@ class InstructionFill(Instruction):
         # runs_ok = all(x == y for x, y in zip(self._runs, rhs._runs))
         runs_ok = (self._runs == rhs._runs)
         return (runs_ok
-            and self._delay == rhs._delay)
+            and self._delay_s == rhs._delay_s)
 
     def __repr__(self):
-        return f"Fill {self._delay} s x {self._runs}"
+        return f"Fill {self._delay_s} s x {self._runs}"
 
     def start(self) -> Instruction:
         # Instant fill
         self._data = (0, 0, 0, None)
-        if self._delay == 0:
+        if self._delay_s == 0:
             # Make it an instant fill, bypass delays
             while self._step():
                 pass
@@ -190,7 +190,7 @@ class InstructionFill(Instruction):
             if self._step():
                 self._neo.copy()
                 self._neo.show()
-                self._neo.sleep(self._delay)
+                self._neo.sleep(self._delay_s)
                 return self
         # This instruction is completed
         return None
@@ -227,15 +227,15 @@ class Sequencer():
                 self._instructions.append(inst)
             elif verb == "slowfill":
                 if (len(lexems)) % 2 != 0:
-                    raise ValueError("Sequencer: Expected 'SlowFill delay  <rgb count> pairs' in line '%s'" % line)
+                    raise ValueError("Sequencer: Expected 'SlowFill delay_s  <rgb count> pairs' in line '%s'" % line)
                 lexems.pop(0) # skip verb
-                delay = float(lexems.pop(0))
+                delay_s = float(lexems.pop(0))
                 runs = [RgbCount(lexems[i*2], int(lexems[i*2+1])) for i in range(0, len(lexems) // 2)]
-                inst = InstructionFill(self._neo_wrapper, delay, runs)
+                inst = InstructionFill(self._neo_wrapper, delay_s, runs)
                 self._instructions.append(inst)
             elif verb == "slide":
                 if len(lexems) < 3:
-                    raise ValueError("Sequencer: Expected 'Slide delay count' in line '%s'" % line)
+                    raise ValueError("Sequencer: Expected 'Slide delay_s count' in line '%s'" % line)
                 inst = InstructionSlide(self._neo_wrapper, float(lexems[1]), int(lexems[2]))
                 self._instructions.append(inst)
             else:
