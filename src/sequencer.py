@@ -240,6 +240,7 @@ class Sequencer():
                 self._instructions.append(inst)
             else:
                 raise ValueError("Sequencer: Unknown command '%s' in line '%s'" % (verb, line))
+        print("@@ Parsed OK:", len(self._instructions), "instruction(s) found")
 
     def step(self) -> bool:
         if self._current is None:

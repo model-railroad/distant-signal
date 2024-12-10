@@ -94,15 +94,11 @@ def init_wifi() -> None:
 def init_mqtt() -> None:
     pass
 
-_blink_idx = 0
 def blink() -> None:
-    global _blink_idx
-    if _blink_idx:
+    if time.time() % 2 == 0:
         _led.brightness = 0
-        _blink_idx = 1
     else:
         _led.brightness = 0.1
-        _blink_idx = 0
 
 
 def loop() -> None:
@@ -134,7 +130,7 @@ def loop() -> None:
             seq.rerun()
         if not seq.step():
             time.sleep(0.25)
-            blink()
+        blink()
 
 
 if __name__ == "__main__":
