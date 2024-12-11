@@ -9,6 +9,10 @@
 # - 2x 100 LEDs WS2812B addressable fairy light strings (source https://amzn.to/40UGURS)
 # - LED string connected to GND and 5V on the QT PY.
 # - LED string 1 and 2 connected in parallel to A1 pin on QT PY.
+#
+# Example effects:
+# xmas colors:      "Fill #000000 1 ; SlowFill 0.1 #00FF00 10 #FF0000 10 ; Slide 0.1 80 "
+# halloween colors: "Fill #000000 1 ; SlowFill 0.1 #FF2800 10 #000000 1 #FF7000 88 #000000 1 ; Slide 0.1 100"
 
 
 import adafruit_connection_manager
@@ -37,8 +41,9 @@ COL_OFF = (0, 0, 0)
 COL_RED = (255, 0, 0)
 COL_GREEN = (0, 255, 0)
 COL_BLUE = (0, 0, 255)
-COL_PURPLE = (255, 0, 255)
-COL_ORANGE = (255, 40, 0)
+COL_PURPLE = (255, 0, 255)      # FF00FF
+COL_ORANGE = (255, 40, 0)       # FF2800
+COL_YELLOW = (255, 112, 0)      # FF7000
 
 # We use the LED color to get init status
 CODE_OK = "ok"
@@ -88,6 +93,7 @@ class ScriptExec:
                 self._seq.parse(self._script)
             while self._seq.step():
                 blink()
+            self._seq.rerun()
 
 
 class InitScriptExec(ScriptExec):
@@ -111,16 +117,14 @@ class EventScriptExec(ScriptExec):
 
 def init() -> None:
     print("@@ init")
-    global _led
-    global _neo
-    global _boot_btn
+    global _led, _neo, _boot_btn, _init_script, _event_script
     _led = neopixel.NeoPixel(board.NEOPIXEL, 1)
     _led.brightness = 0.1
     _neo = neopixel.NeoPixel(board.A1, NEO_LEN, auto_write = False, pixel_order=(0, 1, 2))
     _neo.brightness = 1
     _boot_btn = digitalio.DigitalInOut(board.D0)
     _boot_btn.switch_to_input(pull = digitalio.Pull.UP)
-    _boot_script = InitScriptExec()
+    _init_script = InitScriptExec()
     _event_script = EventScriptExec()
 
 def init_wifi() -> None:
@@ -263,8 +267,6 @@ def loop() -> None:
 
     _neo.fill(COL_OFF)
     _neo.show()
-
-    # seq.parse("Fill #000000 1 ; SlowFill 0.1  #00FF00 10  #FF0000 10 ; Slide 0.1 80 ")
 
     _init_script.loadFromNVM()
     blink()
