@@ -3,7 +3,17 @@
 # License: MIT
 #
 # Target Platform: CircuitPython 9.x on AdaFruit QT PY ESP32-S2
+#
+# Hardware:
+# - AdaFruit QT PY ESP32-S2
+# - 2x 100 LEDs WS2812B addressable fairy light strings (source https://amzn.to/40UGURS)
+# - LED string connected to GND and 5V on the QT PY.
+# - LED string 1 and 2 connected in parallel to A1 pin on QT PY.
 
+
+import adafruit_connection_manager
+import adafruit_logging as logging
+import adafruit_minimqtt.adafruit_minimqtt as MQTT
 import board
 import digitalio
 import neopixel
@@ -14,7 +24,10 @@ import sequencer
 
 _led = None
 _neo = None
+_mqtt = None
 _boot_btn = None
+_logger = logging.getLogger("Ambiance")
+_logger.setLevel(logging.DEBUG)
 
 NEO_LEN = 100
 
@@ -24,43 +37,11 @@ COL_GREEN = (0, 255, 0)
 COL_BLUE = (0, 0, 255)
 COL_ORANGE = (255, 40, 0)
 
-COLS = [
-    (0,  0, 0),
-    (40,  0, 0),
-    (80,  0, 0),
-    (120, 0, 0),
-    (160, 0, 0),
-    (180, 0, 0),
-    (220, 0, 0),
-    (255, 0, 0),
+MQTT_TOPIC_SUBSCRIPTION  = "ambiance/#"
+MQTT_TOPIC_SCRIPT_INIT   = "ambiance/script/init"
+MQTT_TOPIC_SCRIPT_EVENT  = "ambiance/script/event"
+MQTT_TOPIC_EVENT_TRIGGER = "ambiance/event/trigger"
 
-    (0, 0,  0),
-    (0, 40,  0),
-    (0, 80,  0),
-    (0, 120, 0),
-    (0, 160, 0),
-    (0, 180, 0),
-    (0, 220, 0),
-    (0, 255, 0),
-
-    (0, 0, 0, ),
-    (0, 0, 40 ),
-    (0, 0, 80 ),
-    (0, 0, 120),
-    (0, 0, 160),
-    (0, 0, 180),
-    (0, 0, 220),
-    (0, 0, 255),
-
-    (255, 0, 0),
-    (255, 40, 0),
-    (255, 80, 0),
-    (255, 120, 0),
-    (255, 160, 0),
-    (255, 180, 0),
-    (255, 220, 0),
-    (255, 255, 0),
-]
 
 def init() -> None:
     print("@@ init")
@@ -92,7 +73,65 @@ def init_wifi() -> None:
     print("@@ WiFI OK for", wifi_ssid)
 
 def init_mqtt() -> None:
-    pass
+    global _mqtt
+    host = os.getenv("MQTT_BROKER_IP")
+    if not host:
+        print("@@ MQTT: disabled")
+        return
+    port = int(os.getenv("MQTT_BROKER_PORT"))
+    user = os.getenv("MQTT_USERNAME")
+    pasw = os.getenv("MQTT_PASSWORD")
+    print("@@ MQTT: connect to", host, ", port", port, ", user", user, "pass", pasw)
+
+    # Source: https://adafruit-playground.com/u/justmobilize/pages/adafruit-connection-manager
+    pool = adafruit_connection_manager.get_radio_socketpool(wifi.radio)
+
+    # Source: https://learn.adafruit.com/mqtt-in-circuitpython/advanced-minimqtt-usage
+    _mqtt = MQTT.MQTT(
+        broker=host,
+        #port=port,
+        username=user,
+        password=pasw,
+        is_ssl=False,
+        socket_pool=pool,
+    )
+    _mqtt.logger = _logger
+
+    _mqtt.on_connect = _mqtt_on_connected
+    _mqtt.on_disconnect = _mqtt_on_disconnected
+    _mqtt.on_message = _mqtt_on_message
+
+    print("@@ MQTT: connecting...")
+    _mqtt.connect()
+
+def _mqtt_on_connected(client, userdata, flags, rc):
+    # This function will be called when the client is connected successfully to the broker.
+    print("@Q MQTT: Connected")
+    # Subscribe to all changes.
+    client.subscribe(MQTT_TOPIC_SUBSCRIPTION)
+
+def _mqtt_on_disconnected(client, userdata, rc):
+    # This method is called when the client is disconnected
+    print("@Q MQTT: Disconnected")
+
+def _mqtt_on_message(client, topic, message):
+    """Method callled when a client's subscribed feed has a new
+    value.
+    :param str topic: The topic of the feed with a new value.
+    :param str message: The new value
+    """
+    print("@Q MQTT: New message on topic {topic}: {message}")
+
+def _mqtt_loop():
+    if not _mqtt:
+        return
+    try:
+        _mqtt.loop()
+    except (ValueError, RuntimeError) as e:
+        print("@@ MQTT: Failed to get data, retrying\n", e)
+        time.sleep(1)
+        _mqtt.reconnect()
+
 
 def blink() -> None:
     if time.time() % 2 == 0:
@@ -111,7 +150,7 @@ def loop() -> None:
         blink()
         time.sleep(1)
 
-    _led.fill(COL_GREEN)
+    _led.fill(COL_ORANGE)
     _neo.fill(COL_OFF)
 
     seq = sequencer.Sequencer(sequencer.NeoWrapper(_neo, NEO_LEN))
@@ -126,11 +165,12 @@ def loop() -> None:
         blink()
 
     while True:
+        blink()
+        _mqtt_loop()
         if not _boot_btn.value:
             seq.rerun()
         if not seq.step():
             time.sleep(0.25)
-        blink()
 
 
 if __name__ == "__main__":

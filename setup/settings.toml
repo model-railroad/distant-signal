@@ -1,3 +1,10 @@
 # Setting these variables will automatically connect board to WiFi on boot
 CIRCUITPY_WIFI_SSID="Your WiFi SSID Here"
 CIRCUITPY_WIFI_PASSWORD="Your WiFi Password Here"
+
+# MQTT integration.
+# Leave the Broker IP empty to disable the MQTT functionality.
+MQTT_BROKER_IP=""
+MQTT_BROKER_PORT=1883
+MQTT_USERNAME="username"
+MQTT_PASSWORD="password"
