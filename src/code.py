@@ -22,16 +22,17 @@ import board
 import digitalio
 import neopixel
 import os
+import sequencer
+from script_exec import InitScriptExec, EventScriptExec
 import time
 import wifi
-import sequencer
 
 _led = None
 _neo = None
 _mqtt = None
 _boot_btn = None
-_init_script = None
-_event_script = None
+_init_script: InitScriptExec = None
+_event_script: EventScriptExec = None
 _logger = logging.getLogger("Ambiance")
 _logger.setLevel(logging.INFO)      # INFO or DEBUG
 
@@ -62,58 +63,6 @@ MQTT_TOPIC_SCRIPT_INIT   = "ambiance/script/init"
 MQTT_TOPIC_SCRIPT_EVENT  = "ambiance/script/event"
 MQTT_TOPIC_EVENT_TRIGGER = "ambiance/event/trigger"
 
-class ScriptExec:
-    def __init__(self):
-        self._seq = None
-        self._script = ""
-        self._trigger = False
-
-    def loop(self):
-        if self._trigger:
-            self._trigger = False
-            self.exec()
-
-    def newScript(self, script):
-        if self._script != script:
-            self._script = script
-            self._onChanged()
-
-    def _onChanged(self):
-        if self._seq:
-            self._seq.parse(self._script)
-
-    def trigger(self):
-        self._trigger = True
-
-    def exec(self):
-        if self._script:
-            print("@@ Exec script", self._script)
-            if not self._seq:
-                self._seq = sequencer.Sequencer(sequencer.NeoWrapper(_neo, NEO_LEN))
-                self._seq.parse(self._script)
-            while self._seq.step():
-                blink()
-            self._seq.rerun()
-
-
-class InitScriptExec(ScriptExec):
-    def __init__(self):
-        super().__init__()
-        self.trigger()
-
-    def _onChanged(self):
-        super()._onChanged()
-        self.trigger()
-
-    def loadFromNVM(self):
-        # TBD load from NVM and call newScript(script)
-        pass
-
-
-class EventScriptExec(ScriptExec):
-    def __init__(self):
-        super().__init__()
-
 
 def init() -> None:
     print("@@ init")
@@ -124,8 +73,9 @@ def init() -> None:
     _neo.brightness = 1
     _boot_btn = digitalio.DigitalInOut(board.D0)
     _boot_btn.switch_to_input(pull = digitalio.Pull.UP)
-    _init_script = InitScriptExec()
-    _event_script = EventScriptExec()
+    neo_wrapper = sequencer.NeoWrapper(_neo, NEO_LEN)
+    _init_script = InitScriptExec(sequencer.Sequencer(neo_wrapper), blink)
+    _event_script = EventScriptExec(sequencer.Sequencer(neo_wrapper), blink)
 
 def init_wifi() -> None:
     print("@@ WiFI setup")
