@@ -2,7 +2,7 @@
 set -e
 D="/d /f /cygdrive/f"
 C="code.py"
-E="sequencer.py simple_mqtt.py"
+E="sequencer.py"
 
 for d in $D; do
     if [[ -f "$d/$C" ]]; then

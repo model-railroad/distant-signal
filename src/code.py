@@ -21,14 +21,13 @@ import os
 import time
 import wifi
 import sequencer
-from simple_mqtt import SimpleMQTTClient, SimpleMQTTException
 
 _led = None
 _neo = None
 _mqtt = None
 _boot_btn = None
 _logger = logging.getLogger("Ambiance")
-_logger.setLevel(logging.DEBUG)
+_logger.setLevel(logging.INFO)      # INFO or DEBUG
 
 NEO_LEN = 100
 
@@ -36,7 +35,20 @@ COL_OFF = (0, 0, 0)
 COL_RED = (255, 0, 0)
 COL_GREEN = (0, 255, 0)
 COL_BLUE = (0, 0, 255)
+COL_PURPLE = (255, 0, 255)
 COL_ORANGE = (255, 40, 0)
+
+# We use the LED color to get init status
+CODE_OK = "ok"
+CODE_WIFI_FAILED = "wifi_failed"
+CODE_MQTT_FAILED = "mqtt_failed"
+CODE_MQTT_RETRY  = "mqtt_retry"
+COL_LED_ERROR = {
+    CODE_OK: COL_GREEN,
+    CODE_WIFI_FAILED: COL_PURPLE,
+    CODE_MQTT_FAILED: COL_BLUE,
+    CODE_MQTT_RETRY: COL_ORANGE,
+}
 
 MQTT_TOPIC_SUBSCRIPTION  = "ambiance/#"
 MQTT_TOPIC_SCRIPT_INIT   = "ambiance/script/init"
@@ -70,10 +82,11 @@ def init_wifi() -> None:
         wifi.radio.connect(wifi_ssid, wifi_password)
     except ConnectionError:
         print("@@ WiFI Failed to connect to WiFi with provided credentials")
+        blink_error(CODE_WIFI_FAILED)
         raise
     print("@@ WiFI OK for", wifi_ssid)
 
-def init_simple_mqtt() -> None:
+def init_mqtt() -> None:
     global _mqtt
     host = os.getenv("MQTT_BROKER_IP")
     if not host:
@@ -82,39 +95,7 @@ def init_simple_mqtt() -> None:
     port = int(os.getenv("MQTT_BROKER_PORT"))
     user = os.getenv("MQTT_USERNAME")
     pasw = os.getenv("MQTT_PASSWORD")
-    print("@@ MQTT SIMPLE: connect to", host, ", port", port, ", user", user)
-
-    # Source: https://adafruit-playground.com/u/justmobilize/pages/adafruit-connection-manager
-    pool = adafruit_connection_manager.get_radio_socketpool(wifi.radio)
-
-    _mqtt = SimpleMQTTClient(
-        client_id="ambiance",
-        server=host,
-        port=port,
-        user=user,
-        password=pasw,
-        keepalive=0,
-        ssl=None,
-        socket_pool=pool,
-    )
-
-    _mqtt.set_callback(_simple_mqtt_on_message)
-    _mqtt.connect()
-    _mqtt.subscribe(MQTT_TOPIC_SCRIPT_INIT)
-    _mqtt.subscribe(MQTT_TOPIC_SCRIPT_EVENT)
-    _mqtt.subscribe(MQTT_TOPIC_EVENT_TRIGGER)
-
-
-def init_mqtt_adafruit() -> None:
-    global _mqtt
-    host = os.getenv("MQTT_BROKER_IP")
-    if not host:
-        print("@@ MQTT: disabled")
-        return
-    port = int(os.getenv("MQTT_BROKER_PORT"))
-    user = os.getenv("MQTT_USERNAME")
-    pasw = os.getenv("MQTT_PASSWORD")
-    print("@@ MQTT ADA: connect to", host, ", port", port, ", user", user)
+    print("@@ MQTT: connect to", host, ", port", port, ", user", user)
 
     # Source: https://adafruit-playground.com/u/justmobilize/pages/adafruit-connection-manager
     pool = adafruit_connection_manager.get_radio_socketpool(wifi.radio)
@@ -122,7 +103,7 @@ def init_mqtt_adafruit() -> None:
     # Source: https://learn.adafruit.com/mqtt-in-circuitpython/advanced-minimqtt-usage
     _mqtt = MQTT.MQTT(
         broker=host,
-        #port=port,
+        port=port,
         username=user,
         password=pasw,
         is_ssl=False,
@@ -134,18 +115,20 @@ def init_mqtt_adafruit() -> None:
     _mqtt.on_disconnect = _mqtt_on_disconnected
     _mqtt.on_message = _mqtt_on_message
 
-    print("@@ MQTT: connecting...")
-    _mqtt.connect()
-
-def _simple_mqtt_on_message(topic, message):
-    print("@Q Simple MQTT: New message on topic {topic}: {message}")
-
+    try:
+        print("@@ MQTT: connecting...")
+        _mqtt.connect()
+    except Exception as e:
+        print("@@ MQTT: Failed Connecting with ", e)
+        blink_error(CODE_MQTT_FAILED, num_loop=3)
+        _mqtt = "retry"
 
 def _mqtt_on_connected(client, userdata, flags, rc):
     # This function will be called when the client is connected successfully to the broker.
     print("@Q MQTT: Connected")
     # Subscribe to all changes.
     client.subscribe(MQTT_TOPIC_SUBSCRIPTION)
+    blink_error(CODE_OK, num_loop=0)
 
 def _mqtt_on_disconnected(client, userdata, rc):
     # This method is called when the client is disconnected
@@ -157,64 +140,85 @@ def _mqtt_on_message(client, topic, message):
     :param str topic: The topic of the feed with a new value.
     :param str message: The new value
     """
-    print("@Q MQTT: New message on topic {topic}: {message}")
+    print(f"@Q MQTT: New message on topic {topic}: {message}")
 
+_mqtt_retry_ts = 0
 def _mqtt_loop():
     if not _mqtt:
         return
+    if isinstance(_mqtt, str) and _mqtt == "retry":
+        global _mqtt_retry_ts
+        if time.time() - _mqtt_retry_ts > 5:
+            init_mqtt()
+            _mqtt_retry_ts = time.time()
+        return
     try:
-        # _mqtt.check_msg()       # simple
-        _mqtt.loop()          # ada
+        _mqtt.loop()
     except Exception as e:
-        print("@@ MQTT: Failed to get data, retrying\n", e)
-        time.sleep(1)
-        _mqtt.reconnect()     # ada
+        print("@@ MQTT: Failed with ", e)
+        blink_error(CODE_MQTT_RETRY, num_loop=1)
+        try:
+            _mqtt.reconnect()
+            blink_error(CODE_OK, num_loop=0)
+        except Exception as e:
+            print("@@ MQTT: Reconnect failed with ", e)
+            blink_error(CODE_MQTT_FAILED, num_loop=2)
 
-
-def blink() -> None:
-    if time.time() % 2 == 0:
+def blink_error(error_code, num_loop=-1):
+    _led.fill(COL_LED_ERROR[error_code])
+    _led.brightness = 0.1
+    time.sleep(0.5)
+    # For debugging purposes, we can exit the loop by using the boot button to continue
+    while num_loop != 0 and _boot_btn.value:
         _led.brightness = 0
-    else:
+        time.sleep(0.25)
         _led.brightness = 0.1
+        time.sleep(1)
+        num_loop -= 1
 
+_last_blink_ts = 0
+_next_blink = 1
+def blink() -> None:
+    global _last_blink_ts, _next_blink
+    _led.brightness = 0.1 if _next_blink else 0
+    now = time.time()
+    if now - _last_blink_ts > 1:
+        _last_blink_ts = now
+        _next_blink = 1 - _next_blink
 
 def loop() -> None:
     print("@@ loop")
-    pass
 
     # # Sleep a few seconds at boot
+    _led.fill(COL_LED_ERROR[CODE_OK])
     for i in range(0, 3):
         print(i)
         blink()
         time.sleep(1)
 
-    _led.fill(COL_ORANGE)
     _neo.fill(COL_OFF)
 
     seq = sequencer.Sequencer(sequencer.NeoWrapper(_neo, NEO_LEN))
 
     blink()
-    seq.parse("Fill #000000 1 ; SlowFill 0.1  #00FF00 10  #FF0000 10 ;")
-    while seq.step():
-        blink()
-
-    seq.parse("Slide 0.1 80 ")
-    while seq.step():
-        blink()
+    seq.parse("Fill #000000 1 ; SlowFill 0.1  #00FF00 10  #FF0000 10 ; Slide 0.1 80 ")
 
     while True:
+        start_ts = time.monotonic()
         blink()
-        _mqtt_loop()
         if not _boot_btn.value:
             seq.rerun()
-        if not seq.step():
-            time.sleep(0.25)
+        while seq.step():
+            blink()
+        _mqtt_loop()    # This takes 1~2 seconds
+        end_ts = time.monotonic()
+        print("@@ loop: ", end_ts - start_ts)
 
 
 if __name__ == "__main__":
     init()
     init_wifi()
-    init_mqtt_adafruit()
+    init_mqtt()
     loop()
 
 #~~
