@@ -21,6 +21,7 @@ import os
 import time
 import wifi
 import sequencer
+from simple_mqtt import SimpleMQTTClient, SimpleMQTTException
 
 _led = None
 _neo = None
@@ -72,7 +73,7 @@ def init_wifi() -> None:
         raise
     print("@@ WiFI OK for", wifi_ssid)
 
-def init_mqtt() -> None:
+def init_simple_mqtt() -> None:
     global _mqtt
     host = os.getenv("MQTT_BROKER_IP")
     if not host:
@@ -81,7 +82,39 @@ def init_mqtt() -> None:
     port = int(os.getenv("MQTT_BROKER_PORT"))
     user = os.getenv("MQTT_USERNAME")
     pasw = os.getenv("MQTT_PASSWORD")
-    print("@@ MQTT: connect to", host, ", port", port, ", user", user, "pass", pasw)
+    print("@@ MQTT SIMPLE: connect to", host, ", port", port, ", user", user)
+
+    # Source: https://adafruit-playground.com/u/justmobilize/pages/adafruit-connection-manager
+    pool = adafruit_connection_manager.get_radio_socketpool(wifi.radio)
+
+    _mqtt = SimpleMQTTClient(
+        client_id="ambiance",
+        server=host,
+        port=port,
+        user=user,
+        password=pasw,
+        keepalive=0,
+        ssl=None,
+        socket_pool=pool,
+    )
+
+    _mqtt.set_callback(_simple_mqtt_on_message)
+    _mqtt.connect()
+    _mqtt.subscribe(MQTT_TOPIC_SCRIPT_INIT)
+    _mqtt.subscribe(MQTT_TOPIC_SCRIPT_EVENT)
+    _mqtt.subscribe(MQTT_TOPIC_EVENT_TRIGGER)
+
+
+def init_mqtt_adafruit() -> None:
+    global _mqtt
+    host = os.getenv("MQTT_BROKER_IP")
+    if not host:
+        print("@@ MQTT: disabled")
+        return
+    port = int(os.getenv("MQTT_BROKER_PORT"))
+    user = os.getenv("MQTT_USERNAME")
+    pasw = os.getenv("MQTT_PASSWORD")
+    print("@@ MQTT ADA: connect to", host, ", port", port, ", user", user)
 
     # Source: https://adafruit-playground.com/u/justmobilize/pages/adafruit-connection-manager
     pool = adafruit_connection_manager.get_radio_socketpool(wifi.radio)
@@ -103,6 +136,10 @@ def init_mqtt() -> None:
 
     print("@@ MQTT: connecting...")
     _mqtt.connect()
+
+def _simple_mqtt_on_message(topic, message):
+    print("@Q Simple MQTT: New message on topic {topic}: {message}")
+
 
 def _mqtt_on_connected(client, userdata, flags, rc):
     # This function will be called when the client is connected successfully to the broker.
@@ -126,11 +163,12 @@ def _mqtt_loop():
     if not _mqtt:
         return
     try:
-        _mqtt.loop()
-    except (ValueError, RuntimeError) as e:
+        # _mqtt.check_msg()       # simple
+        _mqtt.loop()          # ada
+    except Exception as e:
         print("@@ MQTT: Failed to get data, retrying\n", e)
         time.sleep(1)
-        _mqtt.reconnect()
+        _mqtt.reconnect()     # ada
 
 
 def blink() -> None:
@@ -176,7 +214,7 @@ def loop() -> None:
 if __name__ == "__main__":
     init()
     init_wifi()
-    init_mqtt()
+    init_mqtt_adafruit()
     loop()
 
 #~~

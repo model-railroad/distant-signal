@@ -2,12 +2,14 @@
 set -e
 D="/d /f /cygdrive/f"
 C="code.py"
-S="sequencer.py"
+E="sequencer.py simple_mqtt.py"
 
 for d in $D; do
     if [[ -f "$d/$C" ]]; then
         echo "OK: Using $d/$C"
-        cp -v "$S" "$d/$S"
+        for e in $E; do
+            cp -v "$e" "$d/$e"
+        done
         cp -v "$C" "$d/$C"
         exit 0
     fi
