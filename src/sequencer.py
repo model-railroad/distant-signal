@@ -4,6 +4,23 @@
 #
 # Target Platform: CircuitPython 9.x on AdaFruit QT PY ESP32-S2
 #
+# Sequencer Instructions Programs:
+# - All instructions are separated by a semi-colon.
+# - An instruction beginning by # is a comment and ignored (till EOL or ;)
+# - Instructions are case-insensitive.
+# - RGB colors must be in the pattern #RRGGBB or RRGGBB. The # is optional.
+# Sequencer Instructions:
+# - Length int ==> sets the number of the specified integer. Must be > 0 and < max.
+#       Default is max as set in the constructor.
+# - Brightness float ==> Sets the LED brightness, between 0 (off) and 1 (full brightness).
+#       Note that the luminosity granularity depends on the LEDs being used. Default is 1.
+# - Fill RGB1 Count1 [RGB2 Count2 ... RGBn Countn] ==> Fills the LED buffer with
+#       a _repeated_ pattern of the color list given.
+# - SlowFill Delay RGB1 Count1 [RGB2 Count2 ... RGBn Countn] ==> Same as "Fill"
+#       but with a pause between each LED. The delay is a float representing seconds.
+# - Slide Delay Count ==> Slides all the LED colors in the buffer by the indicated
+#       count, with a pause between each LED. The delay is a float representing seconds.
+#
 # Example usage:
 # _neo = neopixel.NeoPixel(board.A1, NEO_LEN, auto_write = False, pixel_order=(0, 1, 2))
 # seq = sequencer.Sequencer(sequencer.NeoWrapper(_neo, NEO_LEN))
@@ -15,9 +32,10 @@
 import time
 
 class NeoWrapper:
-    def __init__(self, target, len):
-        self.data = [ target[i] for i in range(0, len) ]
-        self.len = len
+    def __init__(self, target, max_len):
+        self.data = [ target[i] for i in range(0, max_len) ]
+        self.max_len = max_len
+        self.len = max_len
         self._target = target
 
     def copy(self):
@@ -29,6 +47,8 @@ class NeoWrapper:
     def sleep(self, seconds: float):
         time.sleep(seconds)
 
+    def brightness(self, value):
+        self._target.brightness = value
 
 class Rgb:
     def __init__(self, rgb: str):
@@ -110,9 +130,9 @@ class InstructionSlide(Instruction):
             delay_s = -delay_s
             first = self._neo.data[0]
             self._neo.data[0 : nl-1] = self._neo.data[1 : nl]
-            self._neo.data[-1] = first
+            self._neo.data[nl-1] = first
         else:
-            last = self._neo.data[-1]
+            last = self._neo.data[nl-1]
             self._neo.data[1 : nl] = self._neo.data[0 : nl-1]
             self._neo.data[0] = last
         self._neo.copy()
@@ -218,7 +238,22 @@ class Sequencer():
                 # Skip empty line or comment.
                 continue
             verb = lexems[0].lower()
-            if verb == "fill":
+            if verb == "length":
+                value = -1
+                if len(lexems) > 1:
+                    value = int(lexems[1])
+                max_len = self._neo_wrapper.max_len
+                if value < 1 or value > max_len:
+                    raise ValueError(f"Sequencer: Expected 'Len num_leds<1..{max_len}>' in line '{line}'")
+                self._neo_wrapper.len = value
+            elif verb == "brightness":
+                value = -1
+                if len(lexems) > 1:
+                    value = float(lexems[1])
+                if value < 0 or value > 1:
+                    raise ValueError(f"Sequencer: Expected 'Brightness float<0..1>' in line '{line}'")
+                self._neo_wrapper.brightness(value)
+            elif verb == "fill":
                 if (len(lexems) - 1) % 2 != 0:
                     raise ValueError("Sequencer: Expected 'Fill <rgb count> pairs' in line '%s'" % line)
                 lexems.pop(0) # skip verb

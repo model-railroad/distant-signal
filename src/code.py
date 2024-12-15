@@ -31,6 +31,7 @@ _led = None
 _neo = None
 _mqtt = None
 _boot_btn = None
+_neo_wrapper: sequencer.NeoWrapper= None
 _init_script: InitScriptExec = None
 _event_script: EventScriptExec = None
 _logger = logging.getLogger("Ambiance")
@@ -59,6 +60,8 @@ COL_LED_ERROR = {
 }
 
 MQTT_TOPIC_SUBSCRIPTION  = "ambiance/#"
+MQTT_TOPIC_LENGTH        = "ambiance/length"
+MQTT_TOPIC_BRIGHTNESS    = "ambiance/brightness"
 MQTT_TOPIC_SCRIPT_INIT   = "ambiance/script/init"
 MQTT_TOPIC_SCRIPT_EVENT  = "ambiance/script/event"
 MQTT_TOPIC_EVENT_TRIGGER = "ambiance/event/trigger"
@@ -66,16 +69,16 @@ MQTT_TOPIC_EVENT_TRIGGER = "ambiance/event/trigger"
 
 def init() -> None:
     print("@@ init")
-    global _led, _neo, _boot_btn, _init_script, _event_script
+    global _led, _neo, _boot_btn, _init_script, _event_script, _neo_wrapper
     _led = neopixel.NeoPixel(board.NEOPIXEL, 1)
     _led.brightness = 0.1
     _neo = neopixel.NeoPixel(board.A1, NEO_LEN, auto_write = False, pixel_order=(0, 1, 2))
     _neo.brightness = 1
     _boot_btn = digitalio.DigitalInOut(board.D0)
     _boot_btn.switch_to_input(pull = digitalio.Pull.UP)
-    neo_wrapper = sequencer.NeoWrapper(_neo, NEO_LEN)
-    _init_script = InitScriptExec(sequencer.Sequencer(neo_wrapper), blink)
-    _event_script = EventScriptExec(sequencer.Sequencer(neo_wrapper), blink)
+    _neo_wrapper = sequencer.NeoWrapper(_neo, NEO_LEN)
+    _init_script = InitScriptExec(sequencer.Sequencer(_neo_wrapper), blink)
+    _event_script = EventScriptExec(sequencer.Sequencer(_neo_wrapper), blink)
 
 def init_wifi() -> None:
     print("@@ WiFI setup")
@@ -151,15 +154,26 @@ def _mqtt_on_message(client, topic, message):
     :param str message: The new value
     """
     print(f"@Q MQTT: New message on topic {topic}: {message}")
-    if topic == MQTT_TOPIC_SCRIPT_INIT:
-        _init_script.newScript(message)
-    elif topic == MQTT_TOPIC_SCRIPT_EVENT:
-        _event_script.newScript(message)
-    elif topic == MQTT_TOPIC_EVENT_TRIGGER:
-        global _last_trigger
-        if _last_trigger != message:
-            _event_script.trigger()
-        _last_trigger = message
+    try:
+        if topic == MQTT_TOPIC_LENGTH:
+            value = int(message)
+            if value >= 1 and value <= _neo_wrapper.max_len:
+                _neo_wrapper.len = int(message)
+        elif topic == MQTT_TOPIC_BRIGHTNESS:
+            valie = float(message)
+            if value >= 0 and value <= 1:
+                _neo_wrapper.brightness(value)
+        elif topic == MQTT_TOPIC_SCRIPT_INIT:
+            _init_script.newScript(message)
+        elif topic == MQTT_TOPIC_SCRIPT_EVENT:
+            _event_script.newScript(message)
+        elif topic == MQTT_TOPIC_EVENT_TRIGGER:
+            global _last_trigger
+            if _last_trigger != message:
+                _event_script.trigger()
+            _last_trigger = message
+    except Exception as e:
+        print(f"@@ MQTT: Failed to process {topic}: {message}", e)
 
 _mqtt_retry_ts = 0
 def _mqtt_loop():
