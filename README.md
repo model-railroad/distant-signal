@@ -7,7 +7,7 @@ repeated sequence of RGB colors, and then animate it with a simple trigger.
 The color and animation script can be loaded from an MQTT broker.
 
 
-[<p align=center><img src="distrib/demo_thumbnail.jpg" alt="Ambiance Demonstration as deployed at the Randall Museum" width="50%"></p>](https://youtu.be/LdthG7FvIyU "Ambiance Experiment")
+[<p align=center><img src="distrib/demo_thumbnail.jpg" alt="Ambiance Demonstration as deployed at the Randall Museum" style="width:50%; height:auto;"></p>](https://youtu.be/LdthG7FvIyU "Ambiance Experiment")
 
 
 ## Hardware used for this project
@@ -148,6 +148,7 @@ Halloween colors:
 ```
 "Fill #000000 1 ; SlowFill 0.1 #FF1000 40 #FF4000 10 ; Slide 0.1 100"
 ```
+
 * `Fill #000000 1` quick "erases" all colors and thus turns off all LEDs in the string.
 * `SlowFill` then progressively make the colors re-appear, one by one.
   There is a repeated pattern of 40 orange LEDs followed by 10 yellow LEDs.
