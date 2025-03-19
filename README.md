@@ -21,6 +21,91 @@ The script is fairly customizable. Any NeoPixel or WS2812B-compatible LED strip 
 work. The length of the LED strip can be customized.
 
 
+### ESP32 Setup
+
+Instructions for the [AdaFruit QT PY ESP32-S2](https://www.adafruit.com/product/5325).
+This page has the
+[specification, pin out, and setup](https://learn.adafruit.com/adafruit-qt-py-esp32-s2).
+
+- The device should already come with a USB bootloader and create a USB drive visible under
+  Windows or Linux. If you don't, follow the
+  [instructions to reflash the bootloader](https://learn.adafruit.com/adafruit-qt-py-esp32-s2/install-uf2-bootloader).
+
+- Plug the ESP32, click the reset button, and as the onboard LED becomes purple, immediately
+  click the reset button again. If you do it right, the onboard LED should stay and remain
+  _green_. A drive named `QTPYS2BOOT` should appear on USB.
+
+- Run the `setup/_get_circuitpy_uf2.sh` script and drop the downloaded `uf2` file on the USB
+  drive. Once the device reboot, a USB drive named `CIRCUITPY` should appear.
+
+- Uploading the code on the ESP32 is done by _copying_ files to the USB drive named `CIRCUITPY`.
+  You can drag'n'drop stuff manually. I prefer to automate things using scripts with MSYS,Cygwin, or Git Bash.
+
+- Tip: Open `src/_lib_upload.sh` and `src/_upload.sh`.
+
+  Change the line `D="/d /f /cygdrive/f"` at the beginning to add the drive letter needed for
+  your USB drive. For example "F:" is "/f" under MSYS, "/cygdrive/f" under Cygwin,
+  or "/media/usb" under Linux.
+
+I run these from the Terminal tab in VS Code:
+
+```
+cd src
+# upload all libraries (once)
+./_lib_upload.sh adafruit_logging
+./_lib_upload.sh adafruit_tricks
+./_lib_upload.sh adafruit_ticks
+./_lib_upload.sh adafruit_connection_manager
+./_lib_upload.sh adafruit_minimqtt
+./_lib_upload.sh neopixel
+# upload source code (after each modification)
+./_upload.sh
+```
+
+Update settings:
+
+- Open `setup\settings.toml`.
+- Open `F:\settings.toml` (or whatever is your CIRCUITPY USB Drive)
+- Copy the settings to the USB drive file, and modify as needed to set the SSID/password
+  for your wifi and your MQTT server information:
+
+```
+# Setting these variables will automatically connect board to WiFi on boot
+CIRCUITPY_WIFI_SSID="Your WiFi SSID Here"
+CIRCUITPY_WIFI_PASSWORD="Your WiFi Password Here"
+
+# MQTT integration.
+MQTT_BROKER_IP=""
+MQTT_BROKER_PORT=1883
+MQTT_USERNAME="username"
+MQTT_PASSWORD="password"
+MQTT_TOPIC_ROOT="ambiance"
+
+# Default NeoPixel strip length
+NEO_LEN="100"
+# NEO_STRIP_PIN can be "A1" or "ONBOARD" (onboard LED)
+NEO_STRIP_PIN="A1"
+```
+
+### Development and Debugging
+
+To monitor the serial out of the
+[AdaFruit QT PY ESP32-S2](https://www.adafruit.com/product/5325),
+configure VS Code Serial Monitor with Text mode, Port USB, Baud rate 115200, Line ending LF.
+
+Note that whilst the ESP32 resets (after pressing the "reset" button),
+VS Code disconnects from the USB port and loses valuable debug information.
+Thus you can't debug your script if it fails to load this way.
+Instead, the easiest way to debug a broken script is to _upload_ it.
+Any upload triggers a soft reboot which reloads the Python VM and exposes any  missing imports:
+
+```
+cd src
+./_upload.sh
+```
+
+
+
 ## MQTT Interaction
 
 **Ambiance** is used by the 
@@ -93,6 +178,12 @@ buffer size compiled in the program (`NEO_LEN` in `code.py`, which defaults to 1
 
 This instruction sets the LED brightness, between 0 (off) and 1 (full brightness).
 Note that the luminosity granularity depends on the LEDs being used. Default is 1.
+
+`Trigger ;`
+
+This instruction takes not parameter and is not recorded. 
+When used, it triggers an execution of the currently defined event script in the main loop.
+This is useful at the end of an event to force the event to trigger once immediately.
 
 
 ## Color Filling Instructions

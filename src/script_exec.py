@@ -25,6 +25,8 @@ class ScriptExec:
 
     def _onChanged(self):
         self._seq.parse(self._script)
+        if self._seq.has_trigger():
+            self._trigger = True
 
     def trigger(self):
         self._trigger = True

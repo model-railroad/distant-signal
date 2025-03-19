@@ -219,6 +219,7 @@ class InstructionFill(Instruction):
 class Sequencer():
     def __init__(self, neo_wrapper: NeoWrapper):
         self._neo_wrapper = neo_wrapper
+        self._trigger = False
         self.reset()
 
     def reset(self) -> None:
@@ -238,7 +239,11 @@ class Sequencer():
                 # Skip empty line or comment.
                 continue
             verb = lexems[0].lower()
-            if verb == "length":
+            if verb == "trigger":
+                if len(lexems) > 1:
+                    raise ValueError(f"Sequencer: Expected 'Trigger' with no arguments in line '{line}'")
+                self._trigger = True
+            elif verb == "length":
                 value = -1
                 if len(lexems) > 1:
                     value = int(lexems[1])
@@ -276,6 +281,11 @@ class Sequencer():
             else:
                 raise ValueError("Sequencer: Unknown command '%s' in line '%s'" % (verb, line))
         print("@@ Parsed OK:", len(self._instructions), "instruction(s) found")
+
+    def has_trigger(self) -> bool:
+        t = self._trigger
+        self._trigger = False
+        return t
 
     def step(self) -> bool:
         if self._current is None:

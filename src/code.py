@@ -38,6 +38,8 @@ _logger = logging.getLogger("Ambiance")
 _logger.setLevel(logging.INFO)      # INFO or DEBUG
 
 NEO_LEN = 100
+NEO_STRIP_PIN = "A1"
+NEO_DONT_BLINK = False
 
 COL_OFF = (0, 0, 0)
 COL_RED = (255, 0, 0)
@@ -59,26 +61,83 @@ COL_LED_ERROR = {
     CODE_MQTT_RETRY: COL_ORANGE,
 }
 
-MQTT_TOPIC_SUBSCRIPTION  = "ambiance/#"
-MQTT_TOPIC_LENGTH        = "ambiance/length"
-MQTT_TOPIC_BRIGHTNESS    = "ambiance/brightness"
-MQTT_TOPIC_SCRIPT_INIT   = "ambiance/script/init"
-MQTT_TOPIC_SCRIPT_EVENT  = "ambiance/script/event"
-MQTT_TOPIC_EVENT_TRIGGER = "ambiance/event/trigger"
+MQTT_TOPIC_ROOT          = "ambiance"
+MQTT_TOPIC_SUBSCRIPTION  = "/#"
+MQTT_TOPIC_LENGTH        = "/length"
+MQTT_TOPIC_BRIGHTNESS    = "/brightness"
+MQTT_TOPIC_SCRIPT_INIT   = "/script/init"
+MQTT_TOPIC_SCRIPT_EVENT  = "/script/event"
+MQTT_TOPIC_EVENT_TRIGGER = "/event/trigger"
+
+
+class OnboardNeoWrapper(sequencer.NeoWrapper):
+    def __init__(self, target, max_len):
+        super().__init__(target, max_len)
+        self.val_brightness = 1
+
+    def copy(self):
+        self._target.brightness = self.val_brightness
+        self._target.fill(self.data[0])
+
+    def show(self):
+        pass
+
+    def sleep(self, seconds: float):
+        super().sleep(seconds)
+
+    def brightness(self, value: float):
+        self.val_brightness = value
+        self._target.brightness = value
 
 
 def init() -> None:
     print("@@ init")
     global _led, _neo, _boot_btn, _init_script, _event_script, _neo_wrapper
+
+    try:
+        neo_len = int(os.getenv("NEO_LEN"))
+        if neo_len > 0:
+            global NEO_LEN
+            NEO_LEN = neo_len
+            print("@@ Settings.toml: neo len set to", NEO_LEN)
+    except Exception as e:
+        print("@@ Settings.toml: Invalid NEO_LEN variable ", e)
+
+    try:
+        mqtt_topic_root = os.getenv("MQTT_TOPIC_ROOT").strip()
+        if mqtt_topic_root:
+            global MQTT_TOPIC_ROOT
+            MQTT_TOPIC_ROOT = mqtt_topic_root
+            print("@@ Settings.toml: MQTT_TOPIC_ROOT set to", MQTT_TOPIC_ROOT)
+    except Exception as e:
+        print("@@ Settings.toml: Invalid MQTT_TOPIC_ROOT variable ", e)
+
+    try:
+        neo_strip_pin = os.getenv("NEO_STRIP_PIN").strip()
+        if neo_strip_pin:
+            global NEO_STRIP_PIN
+            NEO_STRIP_PIN = neo_strip_pin
+            print("@@ Settings.toml: NEO_STRIP_PIN set to", NEO_STRIP_PIN)
+    except Exception as e:
+        print("@@ Settings.toml: Invalid NEO_STRIP_PIN variable ", e)
+
     _led = neopixel.NeoPixel(board.NEOPIXEL, 1)
     _led.brightness = 0.1
-    _neo = neopixel.NeoPixel(board.A1, NEO_LEN, auto_write = False, pixel_order=(0, 1, 2))
-    _neo.brightness = 1
-    _boot_btn = digitalio.DigitalInOut(board.D0)
-    _boot_btn.switch_to_input(pull = digitalio.Pull.UP)
-    _neo_wrapper = sequencer.NeoWrapper(_neo, NEO_LEN)
+
+    if NEO_STRIP_PIN == "ONBOARD":
+        _neo = _led
+        _neo_wrapper = OnboardNeoWrapper(_neo, NEO_LEN)
+        _neo_wrapper.brightness(0.75)
+    else:
+        _neo = neopixel.NeoPixel(getattr(board, NEO_STRIP_PIN), NEO_LEN, auto_write = False, pixel_order=(0, 1, 2))
+        _neo_wrapper = sequencer.NeoWrapper(_neo, NEO_LEN)
+        _neo_wrapper.brightness(1)
+
     _init_script = InitScriptExec(sequencer.Sequencer(_neo_wrapper), blink)
     _event_script = EventScriptExec(sequencer.Sequencer(_neo_wrapper), blink)
+    _boot_btn = digitalio.DigitalInOut(board.D0)
+    _boot_btn.switch_to_input(pull = digitalio.Pull.UP)
+
 
 def init_wifi() -> None:
     print("@@ WiFI setup")
@@ -139,7 +198,7 @@ def _mqtt_on_connected(client, userdata, flags, rc):
     # This function will be called when the client is connected successfully to the broker.
     print("@Q MQTT: Connected")
     # Subscribe to all changes.
-    client.subscribe(MQTT_TOPIC_SUBSCRIPTION)
+    client.subscribe(MQTT_TOPIC_ROOT + MQTT_TOPIC_SUBSCRIPTION)
     blink_error(CODE_OK, num_loop=0)
 
 def _mqtt_on_disconnected(client, userdata, rc):
@@ -155,19 +214,19 @@ def _mqtt_on_message(client, topic, message):
     """
     print(f"@Q MQTT: New message on topic {topic}: {message}")
     try:
-        if topic == MQTT_TOPIC_LENGTH:
+        if topic == MQTT_TOPIC_ROOT + MQTT_TOPIC_LENGTH:
             value = int(message)
             if value >= 1 and value <= _neo_wrapper.max_len:
                 _neo_wrapper.len = int(message)
-        elif topic == MQTT_TOPIC_BRIGHTNESS:
+        elif topic == MQTT_TOPIC_ROOT + MQTT_TOPIC_BRIGHTNESS:
             valie = float(message)
             if value >= 0 and value <= 1:
                 _neo_wrapper.brightness(value)
-        elif topic == MQTT_TOPIC_SCRIPT_INIT:
+        elif topic == MQTT_TOPIC_ROOT + MQTT_TOPIC_SCRIPT_INIT:
             _init_script.newScript(message)
-        elif topic == MQTT_TOPIC_SCRIPT_EVENT:
+        elif topic == MQTT_TOPIC_ROOT + MQTT_TOPIC_SCRIPT_EVENT:
             _event_script.newScript(message)
-        elif topic == MQTT_TOPIC_EVENT_TRIGGER:
+        elif topic == MQTT_TOPIC_ROOT + MQTT_TOPIC_EVENT_TRIGGER:
             global _last_trigger
             if _last_trigger != message:
                 _event_script.trigger()
@@ -212,6 +271,8 @@ def blink_error(error_code, num_loop=-1):
 _last_blink_ts = 0
 _next_blink = 1
 def blink() -> None:
+    if NEO_DONT_BLINK:
+        return
     global _last_blink_ts, _next_blink
     _led.brightness = 0.1 if _next_blink else 0
     now = time.time()
@@ -231,6 +292,9 @@ def loop() -> None:
 
     _neo.fill(COL_OFF)
     _neo.show()
+
+    global NEO_DONT_BLINK
+    NEO_DONT_BLINK = NEO_STRIP_PIN == "ONBOARD"
 
     _init_script.loadFromNVM()
     blink()
