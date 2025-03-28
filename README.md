@@ -1,50 +1,57 @@
-# Ambiance
+# Distant Signal
 
-**Ambiance** is a CircuitPython script for an ESP32 to animate a pattern of LEDs on
-an addressable pixel fairy string.
-A small custom language allows one to define a
-repeated sequence of RGB colors, and then animate it with a simple trigger.
+**Distant Signal** is a CircuitPython script for an ESP32 to displays the state of a remote
+model-railroad turnout on a LED Matrix Display.
+A small custom language allows one to define the panel display, and then animate it with a simple trigger.
 The color and animation script can be loaded from an MQTT broker.
 
-
-[<p align=center><img src="distrib/demo_thumbnail.jpg" alt="Ambiance Demonstration as deployed at the Randall Museum" style="width:50%; height:auto;"></p>](https://youtu.be/LdthG7FvIyU "Ambiance Experiment")
 
 
 ## Hardware used for this project
 
-- AdaFruit QT PY ESP32-S2
-- 2x 100 LEDs WS2812B addressable fairy light strings (such as https://amzn.to/40UGURS)
-- LED string connected to GND and 5V on the QT PY.
-- LED string 1 and 2 connected in parallel to A1 pin on QT PY.
+- [AdaFruit MatrixPortal CircuitPython ESP32-S3](https://www.adafruit.com/product/5778)
+- [AdaFruit 64x32 RGB LED Matrix - 4mm pitch](https://www.adafruit.com/product/2278)
+  or equivalent.
 
-The script is fairly customizable. Any NeoPixel or WS2812B-compatible LED strip should
-work. The length of the LED strip can be customized.
+The script is fairly customizable. There are many more LED Matrix displays compatible
+with the [AdaFruit MatrixPortal](https://learn.adafruit.com/adafruit-matrixportal-s3)
+platform that should work.
 
 
 ### ESP32 Setup
 
-Instructions for the [AdaFruit QT PY ESP32-S2](https://www.adafruit.com/product/5325).
+Instructions for the [MatrixPortal ESP32-S3](https://learn.adafruit.com/adafruit-matrixportal-s3).
 This page has the
-[specification, pin out, and setup](https://learn.adafruit.com/adafruit-qt-py-esp32-s2).
+[specification, pin out](https://learn.adafruit.com/adafruit-matrixportal-s3/pinouts)
+and this page
+[explains how to connect the LED Matrix display](https://learn.adafruit.com/adafruit-matrixportal-s3/prep-the-matrixportal).
 
-- The device should already come with a USB bootloader and create a USB drive visible under
-  Windows or Linux. If you don't, follow the
-  [instructions to reflash the bootloader](https://learn.adafruit.com/adafruit-qt-py-esp32-s2/install-uf2-bootloader).
+- I power the Matrix Portal S3 with a 5V 4A USB-C power supply, as recommended.
+  However that seems a tad overkill as I have measured the power supply to deliver
+  only between 1A and 2A. It probably depends on how busy the screen is, the current
+  application fills maybe 1/3rd of the pixels or even less.
 
-- Plug the ESP32, click the reset button, and as the onboard LED becomes purple, immediately
-  click the reset button again. If you do it right, the onboard LED should stay and remain
-  _green_. A drive named `QTPYS2BOOT` should appear on USB.
+- The device should already come with a USB bootloader and create a USB drive visible
+  under Windows or Linux.
+  If needed follow the
+  [instructions to reflash the bootloader](https://learn.adafruit.com/adafruit-matrixportal-s3/factory-reset#factory-reset-and-bootloader-repair-3107941).
 
-- Run the `setup/_get_circuitpy_uf2.sh` script and drop the downloaded `uf2` file on the USB
-  drive. Once the device reboot, a USB drive named `CIRCUITPY` should appear.
+- Plug the ESP32, click the reset button, and as the onboard LED becomes purple,
+  immediately click the reset button again. If you do it right, the onboard LED should
+  stay and remain _green_. A drive named `QTPYS2BOOT` should appear on USB.
 
-- Uploading the code on the ESP32 is done by _copying_ files to the USB drive named `CIRCUITPY`.
-  You can drag'n'drop stuff manually. I prefer to automate things using scripts with MSYS,Cygwin, or Git Bash.
+- Run the `setup/_get_circuitpy_uf2.sh` script and drop the downloaded `uf2` file on the
+  USB drive. Once the device reboot, a USB drive named `CIRCUITPY` should appear.
+
+- Uploading the code on the ESP32 is done by _copying_ files to the USB drive named
+ `CIRCUITPY`.
+  You can drag'n'drop stuff manually. I prefer to automate things using scripts with MSYS,
+  Cygwin, or Git Bash.
 
 - Tip: Open `src/_lib_upload.sh` and `src/_upload.sh`.
 
-  Change the line `D="/d /f /cygdrive/f"` at the beginning to add the drive letter needed for
-  your USB drive. For example "F:" is "/f" under MSYS, "/cygdrive/f" under Cygwin,
+  Change the line `D="/d /f /cygdrive/f"` at the beginning to add the drive letter needed
+  for your USB drive. For example "F:" is "/f" under MSYS, "/cygdrive/f" under Cygwin,
   or "/media/usb" under Linux.
 
 I run these from the Terminal tab in VS Code:
@@ -53,11 +60,14 @@ I run these from the Terminal tab in VS Code:
 cd src
 # upload all libraries (once)
 ./_lib_upload.sh adafruit_logging
-./_lib_upload.sh adafruit_tricks
-./_lib_upload.sh adafruit_ticks
 ./_lib_upload.sh adafruit_connection_manager
+./_lib_upload.sh adafruit_ticks
 ./_lib_upload.sh adafruit_minimqtt
 ./_lib_upload.sh neopixel
+./_lib_upload.sh adafruit_matrixportal
+./_lib_upload.sh adafruit_bitmap_font
+./_lib_upload.sh adafruit_display_text
+
 # upload source code (after each modification)
 ./_upload.sh
 ```
@@ -269,7 +279,7 @@ License: MIT
 
 https://opensource.org/license/mit
 
-Copyright 2024 (c) ralfoide at gmail
+Copyright 2025 (c) ralfoide at gmail
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this
 software and associated documentation files (the “Software”), to deal in the Software

@@ -1,45 +1,42 @@
-# Lights Test
-# 2024 (c) ralfoide at gmail
+# Distant Signal
+# 2025 (c) ralfoide at gmail
 # License: MIT
 #
-# Target Platform: CircuitPython 9.x on AdaFruit QT PY ESP32-S2
+# Target Platform: AdaFruit MatrixPortal CircuitPython ESP32-S3
 #
 # Hardware:
-# - AdaFruit QT PY ESP32-S2
-# - 2x 100 LEDs WS2812B addressable fairy light strings (source https://amzn.to/40UGURS)
-# - LED string connected to GND and 5V on the QT PY.
-# - LED string 1 and 2 connected in parallel to A1 pin on QT PY.
-#
-# Example effects:
-# xmas colors:      "Fill #000000 1 ; SlowFill 0.1 #00FF00 10 #FF0000 10 ; Slide 0.1 80 "
-# halloween colors: "Fill #000000 1 ; SlowFill 0.1 #FF2800 10 #000000 1 #FF7000 88 #000000 1 ; Slide 0.1 100"
+# - AdaFruit MatrixPortal CircuitPython ESP32-S3
+# - AdaFruit 64x32 RGB LED Matrix
 
 
+# CircuitPython built-in libraries
+import board
+import digitalio
+import displayio
+import os
+import terminalio
+import time
+import vectorio
+import wifi
+from digitalio import DigitalInOut, Direction, Pull
+
+# Bundle libraries
+import neopixel
 import adafruit_connection_manager
 import adafruit_logging as logging
 import adafruit_minimqtt.adafruit_minimqtt as MQTT
-import board
-import digitalio
-import neopixel
-import os
-import sequencer
-from script_exec import InitScriptExec, EventScriptExec
-import time
-import wifi
+from adafruit_matrixportal.matrix import Matrix
+from adafruit_display_text.label import Label
+from adafruit_bitmap_font import bitmap_font
+
 
 _led = None
-_neo = None
 _mqtt = None
 _boot_btn = None
-_neo_wrapper: sequencer.NeoWrapper= None
-_init_script: InitScriptExec = None
-_event_script: EventScriptExec = None
-_logger = logging.getLogger("Ambiance")
+_button_down = None
+_button_up = None
+_logger = logging.getLogger("DistantSignal")
 _logger.setLevel(logging.INFO)      # INFO or DEBUG
-
-NEO_LEN = 100
-NEO_STRIP_PIN = "A1"
-NEO_DONT_BLINK = False
 
 COL_OFF = (0, 0, 0)
 COL_RED = (255, 0, 0)
@@ -61,7 +58,7 @@ COL_LED_ERROR = {
     CODE_MQTT_RETRY: COL_ORANGE,
 }
 
-MQTT_TOPIC_ROOT          = "ambiance"
+MQTT_TOPIC_ROOT          = "distantsignal"
 MQTT_TOPIC_SUBSCRIPTION  = "/#"
 MQTT_TOPIC_LENGTH        = "/length"
 MQTT_TOPIC_BRIGHTNESS    = "/brightness"
@@ -70,41 +67,12 @@ MQTT_TOPIC_SCRIPT_EVENT  = "/script/event"
 MQTT_TOPIC_EVENT_TRIGGER = "/event/trigger"
 
 
-class OnboardNeoWrapper(sequencer.NeoWrapper):
-    def __init__(self, target, max_len):
-        super().__init__(target, max_len)
-        self.val_brightness = 1
-
-    def copy(self):
-        self._target.brightness = self.val_brightness
-        self._target.fill(self.data[0])
-
-    def show(self):
-        pass
-
-    def sleep(self, seconds: float):
-        super().sleep(seconds)
-
-    def brightness(self, value: float):
-        self.val_brightness = value
-        self._target.brightness = value
-
-
 def init() -> None:
     print("@@ init")
-    global _led, _neo, _boot_btn, _init_script, _event_script, _neo_wrapper
+    global _led, _boot_btn
 
     try:
-        neo_len = int(os.getenv("NEO_LEN"))
-        if neo_len > 0:
-            global NEO_LEN
-            NEO_LEN = neo_len
-            print("@@ Settings.toml: neo len set to", NEO_LEN)
-    except Exception as e:
-        print("@@ Settings.toml: Invalid NEO_LEN variable ", e)
-
-    try:
-        mqtt_topic_root = os.getenv("MQTT_TOPIC_ROOT").strip()
+        mqtt_topic_root = os.getenv("MQTT_TOPIC_ROOT", "").strip()
         if mqtt_topic_root:
             global MQTT_TOPIC_ROOT
             MQTT_TOPIC_ROOT = mqtt_topic_root
@@ -112,29 +80,15 @@ def init() -> None:
     except Exception as e:
         print("@@ Settings.toml: Invalid MQTT_TOPIC_ROOT variable ", e)
 
-    try:
-        neo_strip_pin = os.getenv("NEO_STRIP_PIN").strip()
-        if neo_strip_pin:
-            global NEO_STRIP_PIN
-            NEO_STRIP_PIN = neo_strip_pin
-            print("@@ Settings.toml: NEO_STRIP_PIN set to", NEO_STRIP_PIN)
-    except Exception as e:
-        print("@@ Settings.toml: Invalid NEO_STRIP_PIN variable ", e)
-
     _led = neopixel.NeoPixel(board.NEOPIXEL, 1)
     _led.brightness = 0.1
 
-    if NEO_STRIP_PIN == "ONBOARD":
-        _neo = _led
-        _neo_wrapper = OnboardNeoWrapper(_neo, NEO_LEN)
-        _neo_wrapper.brightness(0.75)
-    else:
-        _neo = neopixel.NeoPixel(getattr(board, NEO_STRIP_PIN), NEO_LEN, auto_write = False, pixel_order=(0, 1, 2))
-        _neo_wrapper = sequencer.NeoWrapper(_neo, NEO_LEN)
-        _neo_wrapper.brightness(1)
-
-    _init_script = InitScriptExec(sequencer.Sequencer(_neo_wrapper), blink)
-    _event_script = EventScriptExec(sequencer.Sequencer(_neo_wrapper), blink)
+def init_buttons():
+    global _button_down, _button_up, _boot_btn
+    _button_down = DigitalInOut(board.BUTTON_DOWN)
+    _button_down.switch_to_input(pull=Pull.UP)
+    _button_up = DigitalInOut(board.BUTTON_UP)
+    _button_up.switch_to_input(pull=Pull.UP)
     _boot_btn = digitalio.DigitalInOut(board.D0)
     _boot_btn.switch_to_input(pull = digitalio.Pull.UP)
 
@@ -142,8 +96,8 @@ def init() -> None:
 def init_wifi() -> None:
     print("@@ WiFI setup")
     # Get wifi AP credentials from onboard settings.toml file
-    wifi_ssid = os.getenv("CIRCUITPY_WIFI_SSID")
-    wifi_password = os.getenv("CIRCUITPY_WIFI_PASSWORD")
+    wifi_ssid = os.getenv("CIRCUITPY_WIFI_SSID", "")
+    wifi_password = os.getenv("CIRCUITPY_WIFI_PASSWORD", "")
     print("@@ WiFI SSID:", wifi_ssid)
     if wifi_ssid is None:
         print("@@ WiFI credentials are kept in settings.toml, please add them there!")
@@ -159,13 +113,13 @@ def init_wifi() -> None:
 
 def init_mqtt() -> None:
     global _mqtt
-    host = os.getenv("MQTT_BROKER_IP")
+    host = os.getenv("MQTT_BROKER_IP", "")
     if not host:
         print("@@ MQTT: disabled")
         return
-    port = int(os.getenv("MQTT_BROKER_PORT"))
-    user = os.getenv("MQTT_USERNAME")
-    pasw = os.getenv("MQTT_PASSWORD")
+    port = int(os.getenv("MQTT_BROKER_PORT", 1883))
+    user = os.getenv("MQTT_USERNAME", "")
+    pasw = os.getenv("MQTT_PASSWORD", "")
     print("@@ MQTT: connect to", host, ", port", port, ", user", user)
 
     # Source: https://adafruit-playground.com/u/justmobilize/pages/adafruit-connection-manager
@@ -194,6 +148,157 @@ def init_mqtt() -> None:
         blink_error(CODE_MQTT_FAILED, num_loop=3)
         _mqtt = "retry"
 
+def init_display():
+    displayio.release_displays()
+    _matrix = Matrix(
+        width=64,
+        height=64,
+        bit_depth=3,
+        serpentine=True,
+        tile_rows=1,
+        alt_addr_pins=[
+            board.MTX_ADDRA,
+            board.MTX_ADDRB,
+            board.MTX_ADDRC,
+            board.MTX_ADDRD,
+            board.MTX_ADDRE
+        ],
+    )
+    display = _matrix.display
+
+    gT = displayio.Group()
+    gN = displayio.Group()
+    # root_group.append(self)
+
+    pal_blue = displayio.Palette(1)
+    pal_blue[0] = 0x0000FF
+    pal_green = displayio.Palette(1)
+    pal_green[0] = 0x00FF00
+    pal_red = displayio.Palette(1)
+    pal_red[0] = 0xFF0000
+    pal_green2 = displayio.Palette(1)
+    pal_green2[0] = 0x002000
+    pal_red2 = displayio.Palette(1)
+    pal_red2[0] = 0x200000
+    pal_gray = displayio.Palette(1)
+    pal_gray[0] = 0x002000
+
+    # circle = vectorio.Circle(
+    #     pixel_shader=pal_blue,
+    #      radius=12, x=32, y=16)
+    # g.append(circle)
+
+    r330T = vectorio.Rectangle(
+        pixel_shader=pal_red,
+        width=26,
+        height=4,
+        x=0,
+        y=20
+    )
+    r330N = vectorio.Rectangle(
+        pixel_shader=pal_green,
+        width=26,
+        height=4,
+        x=0,
+        y=20
+    )
+    gT.append(r330T)
+    gN.append(r330N)
+
+    r321T = vectorio.Rectangle(
+        pixel_shader=pal_red,
+        width=26,
+        height=4,
+        x=64-26,
+        y=20-12
+    )
+    r321N = vectorio.Rectangle(
+        pixel_shader=pal_red2,
+        width=26,
+        height=4,
+        x=64-26,
+        y=20-12
+    )
+    gT.append(r321T)
+    gN.append(r321N)
+
+    r320T = vectorio.Rectangle(
+        pixel_shader=pal_green2,
+        width=26,
+        height=4,
+        x=64-26,
+        y=20
+    )
+    r320N = vectorio.Rectangle(
+        pixel_shader=pal_green,
+        width=26,
+        height=4,
+        x=64-26,
+        y=20
+    )
+    gT.append(r320T)
+    gN.append(r320N)
+
+    pT = vectorio.Polygon(
+        pixel_shader=pal_red,
+        x=26,
+        y=20,
+        points=[ 
+            (0,0), (0,4), 
+            (64-26-26, -12+4), (64-26-26, -12),
+            (64-26-26-1, -12), (0,-1) ]
+    )
+    gT.append(pT)
+
+    rN = vectorio.Rectangle(
+        pixel_shader=pal_green,
+        x=26,
+        y=20,
+        width=64-26-26,
+        height=4
+    )
+    gN.append(rN)
+
+    text1 = Label(terminalio.FONT)
+    text1.x = 0
+    text1.y = 7
+    text1.color = 0x808080
+    text1.text = "T330"
+    gT.append(text1)
+    text1 = Label(terminalio.FONT)
+    text1.x = 0
+    text1.y = 7
+    text1.color = 0x808080
+    text1.text = "T330"
+    gN.append(text1)
+
+    # text2 = Label(terminalio.FONT)
+    # text2.x = 32
+    # text2.y = 20
+    # text2.color = 0xFFFFFF
+    # text2.text = "Line 2"
+    # g.append(text2)
+
+
+    thrown=False
+    while True:
+        if thrown:
+            # r330.pixel_shader = pal_red
+            # r321.pixel_shader = pal_red
+            # r320.pixel_shader = pal_gray
+            display.root_group = gT
+        else:
+            # r330.pixel_shader = pal_green
+            # r321.pixel_shader = pal_gray
+            # r320.pixel_shader = pal_green
+            display.root_group = gN
+        display.refresh(minimum_frames_per_second=0)
+        time.sleep(0.5)
+        if not _button_down.value or not _button_up.value:
+            thrown = not thrown
+
+
+
 def _mqtt_on_connected(client, userdata, flags, rc):
     # This function will be called when the client is connected successfully to the broker.
     print("@Q MQTT: Connected")
@@ -205,7 +310,6 @@ def _mqtt_on_disconnected(client, userdata, rc):
     # This method is called when the client is disconnected
     print("@Q MQTT: Disconnected")
 
-_last_trigger = None
 def _mqtt_on_message(client, topic, message):
     """Method callled when a client's subscribed feed has a new
     value.
@@ -215,22 +319,15 @@ def _mqtt_on_message(client, topic, message):
     print(f"@Q MQTT: New message on topic {topic}: {message}")
     try:
         if topic == MQTT_TOPIC_ROOT + MQTT_TOPIC_LENGTH:
-            value = int(message)
-            if value >= 1 and value <= _neo_wrapper.max_len:
-                _neo_wrapper.len = int(message)
+            pass
         elif topic == MQTT_TOPIC_ROOT + MQTT_TOPIC_BRIGHTNESS:
-            valie = float(message)
-            if value >= 0 and value <= 1:
-                _neo_wrapper.brightness(value)
+            pass
         elif topic == MQTT_TOPIC_ROOT + MQTT_TOPIC_SCRIPT_INIT:
-            _init_script.newScript(message)
+            pass
         elif topic == MQTT_TOPIC_ROOT + MQTT_TOPIC_SCRIPT_EVENT:
-            _event_script.newScript(message)
+            pass
         elif topic == MQTT_TOPIC_ROOT + MQTT_TOPIC_EVENT_TRIGGER:
-            global _last_trigger
-            if _last_trigger != message:
-                _event_script.trigger()
-            _last_trigger = message
+            pass
     except Exception as e:
         print(f"@@ MQTT: Failed to process {topic}: {message}", e)
 
@@ -271,8 +368,6 @@ def blink_error(error_code, num_loop=-1):
 _last_blink_ts = 0
 _next_blink = 1
 def blink() -> None:
-    if NEO_DONT_BLINK:
-        return
     global _last_blink_ts, _next_blink
     _led.brightness = 0.1 if _next_blink else 0
     now = time.time()
@@ -290,21 +385,14 @@ def loop() -> None:
         blink()
         time.sleep(1)
 
-    _neo.fill(COL_OFF)
-    _neo.show()
-
-    global NEO_DONT_BLINK
-    NEO_DONT_BLINK = NEO_STRIP_PIN == "ONBOARD"
-
-    _init_script.loadFromNVM()
     blink()
+
+    init_display()
 
     while True:
         start_ts = time.monotonic()
         blink()
         _mqtt_loop()    # This takes 1~2 seconds
-        _init_script.loop()
-        _event_script.loop()
         end_ts = time.monotonic()
         delta_ts = end_ts - start_ts
         if delta_ts < 1: time.sleep(0.25)  # prevent busy loop
@@ -313,6 +401,7 @@ def loop() -> None:
 
 if __name__ == "__main__":
     init()
+    init_buttons()
     init_wifi()
     init_mqtt()
     loop()
