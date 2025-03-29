@@ -66,6 +66,14 @@ MQTT_TOPIC_SCRIPT_INIT   = "/script/init"
 MQTT_TOPIC_SCRIPT_EVENT  = "/script/event"
 MQTT_TOPIC_EVENT_TRIGGER = "/event/trigger"
 
+# the current working directory (where this file is)
+CWD = ("/" + __file__).rsplit("/", 1)[
+    0
+]
+
+FONT_3x5_PATH1 = CWD + "/tom-thumb.bdf"
+FONT_3x5_PATH2 = CWD + "/tom-thumb2.bdf"
+
 
 def init() -> None:
     print("@@ init")
@@ -166,6 +174,12 @@ def init_display():
     )
     display = _matrix.display
 
+    font1 = bitmap_font.load_font(FONT_3x5_PATH1)
+    font2 = bitmap_font.load_font(FONT_3x5_PATH2)
+    # glyphs = b"0123456789BCT"
+    # font1.load_glyphs(glyphs)
+    # font2.load_glyphs(glyphs)
+
     gT = displayio.Group()
     gN = displayio.Group()
     # root_group.append(self)
@@ -259,26 +273,24 @@ def init_display():
     )
     gN.append(rN)
 
-    text1 = Label(terminalio.FONT)
-    text1.x = 0
-    text1.y = 7
-    text1.color = 0x808080
-    text1.text = "T330"
-    gT.append(text1)
-    text1 = Label(terminalio.FONT)
-    text1.x = 0
-    text1.y = 7
-    text1.color = 0x808080
-    text1.text = "T330"
-    gN.append(text1)
+    for t in [  (0,      0,    "T330", 2, 0x808080, 0x808080, font1), 
+                (64-4*4, 0,    "B321", 1, 0x808080, 0x202020, font2), 
+                (64-4*4, 32-5, "B320", 1, 0x202020, 0x808080, font2)]:
+        text1 = Label(t[6])
+        text1.x = t[0]
+        text1.y = t[1]+3*t[3]
+        text1.text = t[2]
+        text1.scale = t[3]
+        text1.color = t[4]        
+        gT.append(text1)
 
-    # text2 = Label(terminalio.FONT)
-    # text2.x = 32
-    # text2.y = 20
-    # text2.color = 0xFFFFFF
-    # text2.text = "Line 2"
-    # g.append(text2)
-
+        text1 = Label(t[6])
+        text1.x = t[0]
+        text1.y = t[1]+3*t[3]
+        text1.text = t[2]
+        text1.scale = t[3]
+        text1.color = t[5]
+        gN.append(text1)
 
     thrown=False
     while True:
