@@ -29,14 +29,16 @@ from adafruit_matrixportal.matrix import Matrix
 from adafruit_display_text.label import Label
 from adafruit_bitmap_font import bitmap_font
 
-from drawing_state import DrawingState
+# from drawing_state import DrawingState
+from script_parser import ScriptParser, FONT_Y_OFFSET
 
 
 _led = None
 _mqtt = None
 _matrix = None
 _fonts = []
-_states = []
+# _states = []
+_script = None
 _boot_btn = None
 _button_down = None
 _button_up = None
@@ -187,140 +189,16 @@ def init_display():
     font2 = bitmap_font.load_font(FONT_3x5_PATH2)
     _fonts.append(font1)
     _fonts.append(font2)
-    # glyphs = b"0123456789BCT"
-    # font1.load_glyphs(glyphs)
-    # font2.load_glyphs(glyphs)
 
-    # gT = displayio.Group()
-    # gN = displayio.Group()
-    # # root_group.append(self)
-
-    # pal_blue = displayio.Palette(1)
-    # pal_blue[0] = 0x0000FF
-    # pal_green = displayio.Palette(1)
-    # pal_green[0] = 0x00FF00
-    # pal_red = displayio.Palette(1)
-    # pal_red[0] = 0xFF0000
-    # pal_green2 = displayio.Palette(1)
-    # pal_green2[0] = 0x002000
-    # pal_red2 = displayio.Palette(1)
-    # pal_red2[0] = 0x200000
-    # pal_gray = displayio.Palette(1)
-    # pal_gray[0] = 0x002000
-
-    # # circle = vectorio.Circle(
-    # #     pixel_shader=pal_blue,
-    # #      radius=12, x=32, y=16)
-    # # g.append(circle)
-
-    # r330T = vectorio.Rectangle(
-    #     pixel_shader=pal_red,
-    #     width=26,
-    #     height=4,
-    #     x=0,
-    #     y=20
-    # )
-    # r330N = vectorio.Rectangle(
-    #     pixel_shader=pal_green,
-    #     width=26,
-    #     height=4,
-    #     x=0,
-    #     y=20
-    # )
-    # gT.append(r330T)
-    # gN.append(r330N)
-
-    # r321T = vectorio.Rectangle(
-    #     pixel_shader=pal_red,
-    #     width=26,
-    #     height=4,
-    #     x=64-26,
-    #     y=20-12
-    # )
-    # r321N = vectorio.Rectangle(
-    #     pixel_shader=pal_red2,
-    #     width=26,
-    #     height=4,
-    #     x=64-26,
-    #     y=20-12
-    # )
-    # gT.append(r321T)
-    # gN.append(r321N)
-
-    # r320T = vectorio.Rectangle(
-    #     pixel_shader=pal_green2,
-    #     width=26,
-    #     height=4,
-    #     x=64-26,
-    #     y=20
-    # )
-    # r320N = vectorio.Rectangle(
-    #     pixel_shader=pal_green,
-    #     width=26,
-    #     height=4,
-    #     x=64-26,
-    #     y=20
-    # )
-    # gT.append(r320T)
-    # gN.append(r320N)
-
-    # pT = vectorio.Polygon(
-    #     pixel_shader=pal_red,
-    #     x=26,
-    #     y=20,
-    #     points=[ 
-    #         (0,0), (0,4), 
-    #         (64-26-26, -12+4), (64-26-26, -12),
-    #         (64-26-26-1, -12), (0,-1) ]
-    # )
-    # gT.append(pT)
-
-    # rN = vectorio.Rectangle(
-    #     pixel_shader=pal_green,
-    #     x=26,
-    #     y=20,
-    #     width=64-26-26,
-    #     height=4
-    # )
-    # gN.append(rN)
-
-    # for t in [  (0,      0,    "T330", 2, 0x808080, 0x808080, font1), 
-    #             (64-4*4, 0,    "B321", 1, 0x808080, 0x202020, font2), 
-    #             (64-4*4, 32-5, "B320", 1, 0x202020, 0x808080, font2)]:
-    #     text1 = Label(t[6])
-    #     text1.x = t[0]
-    #     text1.y = t[1]+3*t[3]
-    #     text1.text = t[2]
-    #     text1.scale = t[3]
-    #     text1.color = t[4]        
-    #     gT.append(text1)
-
-    #     text1 = Label(t[6])
-    #     text1.x = t[0]
-    #     text1.y = t[1]+3*t[3]
-    #     text1.text = t[2]
-    #     text1.scale = t[3]
-    #     text1.color = t[5]
-    #     gN.append(text1)
-
-    # thrown=False
-    # while True:
-    #     if thrown:
-    #         # r330.pixel_shader = pal_red
-    #         # r321.pixel_shader = pal_red
-    #         # r320.pixel_shader = pal_gray
-    #         display.root_group = gT
-    #     else:
-    #         # r330.pixel_shader = pal_green
-    #         # r321.pixel_shader = pal_gray
-    #         # r320.pixel_shader = pal_green
-    #         display.root_group = gN
-    #     display.refresh(minimum_frames_per_second=0)
-    #     time.sleep(0.5)
-    #     if not _button_down.value or not _button_up.value:
-    #         thrown = not thrown
-
-
+    loading_group = displayio.Group()
+    t = Label(font1)
+    t.text = "Loading"
+    t.x = (SX - len(t.text) * 4) // 2
+    t.y = SY // 2 - 2 + FONT_Y_OFFSET
+    t.scale = 1
+    t.color = 0x202020
+    loading_group.append(t)
+    display.root_group = loading_group
 
 def _mqtt_on_connected(client, userdata, flags, rc):
     # This function will be called when the client is connected successfully to the broker.
@@ -399,42 +277,97 @@ def blink() -> None:
         _next_blink = 1 - _next_blink
 
 def mk_script():
-    # Normal state: B320 to B330
-    s1 = DrawingState(SX, SY, _fonts)
-    s1.parse("""
-    T   0  0 "T330" #F0F0F0 font1 scale2 ;
-    T -16  2 "B321" #202020 font2 scale1 ;
-    T -16 -6 "B320" #F0F0F0 ;
-    T   2 -6 "B330" #F0F0F0 ;
-    # B321 red ;
-    L 26-2 20      38-2 20-12+1 #200000 ;
-    L 38-2 20-12+1 64   20-12+1 #200000 ;
-    L 26+5 20      38   20-12+5 #200000 ;
-    L 38   20-12+5 64   20-12+5 #200000 ;
-    # B320 green ;
-    R    0 20-1 64  6  #00FF00;
-    """)
+    global _script
+    # # Normal state: B320 to B330
+    # s1 = DrawingState(SX, SY, _fonts)
+    # s1.parse("""
+    # T   0  0 "T330" #F0F0F0 font1 scale2 ;
+    # T -16  2 "B321" #202020 font2 scale1 ;
+    # T -16 -6 "B320" #F0F0F0 ;
+    # T   2 -6 "B330" #F0F0F0 ;
+    # # B321 red ;
+    # L 26-2 20      38-2 20-12+1 #200000 ;
+    # L 38-2 20-12+1 64   20-12+1 #200000 ;
+    # L 26+5 20      38   20-12+5 #200000 ;
+    # L 38   20-12+5 64   20-12+5 #200000 ;
+    # # B320 green ;
+    # R    0 20-1 64  6  #00FF00;
+    # """)
 
-    # Thrown state: B321 to B330
-    s2 = DrawingState(SX, SY, _fonts)
-    s2.parse("""
-    T   0  0 "T330" #F0F0F0 font1 scale2 ;
-    T -16  2 "B321" #F0F0F0 font2 scale1 ;
-    T -16 -6 "B320" #202020 ;
-    T   2 -6 "B330" #F0F0F0 ;
-    # B320 red ;
-    L  26 20   64 20    #200000;
-    L  26 20+4 64 20+4  #200000;
-    # B321 green ;
-    P   0 20-1   26-2 20-1   38-2 20-12   64 20-12
-                                          64 20-12+6
-                             38   20-12+6
-                 26   20+5
-        0 20+5   #00FF00 ;
-    """)
-    _states.append(s2)
-    _states.append(s1)
+    # # Thrown state: B321 to B330
+    # s2 = DrawingState(SX, SY, _fonts)
+    # s2.parse("""
+    # T   0  0 "T330" #F0F0F0 font1 scale2 ;
+    # T -16  2 "B321" #F0F0F0 font2 scale1 ;
+    # T -16 -6 "B320" #202020 ;
+    # R   0 -7  16+3 32 #F0F000 ;
+    # T   2 -6 "B330" #000000 ;
+    # # B320 red ;
+    # L  26 20   64 20    #200000;
+    # L  26 20+4 64 20+4  #200000;
+    # # B321 green ;
+    # P   0 20-1   26-2 20-1   38-2 20-12   64 20-12
+    #                                       64 20-12+6
+    #                          38   20-12+6
+    #              26   20+5
+    #     0 20+5   #00FF00 ;
+    # """)
+    # _states.append(s2)
+    # _states.append(s1)
 
+    _script = ScriptParser(SX, SY, _fonts)
+    _script.parseJson("""
+{
+    "title":  [
+        {"op": "text", "x": 0, "y": 0, "t": "T330", "rgb": "#F0F0F0", "scale": 2, "font": 2 }
+    ],
+    "block_active": [
+        {"op": "rect", "x": -2, "y": -1, "w": "16+3", "h": "7", "rgb": "#202000" },
+        {"op": "text", "x":  0, "y":  0, "t": "NAME", "rgb": "#000000" }
+    ],
+    "block_inactive": [
+        {"op": "text", "x":  0, "y": 0, "t": "NAME", "rgb": "#202020" }
+    ],
+    "blocks": {
+        "b321": {
+            "active"  : [ { "tmpl": "block_active"  , "vars" : { "NAME": "B321" }, "x": -16, "y":  2 } ],
+            "inactive": [ { "tmpl": "block_inactive", "vars" : { "NAME": "B321" }, "x": -16, "y":  2 } ]
+        },
+        "b320": {
+            "active"  : [ { "tmpl": "block_active"  , "vars" : { "NAME": "B320" }, "x": -16, "y": -6 } ],
+            "inactive": [ { "tmpl": "block_inactive", "vars" : { "NAME": "B320" }, "x": -16, "y": -6 } ]
+        },
+        "b330": {
+            "active"  : [ { "tmpl": "block_active"  , "vars" : { "NAME": "B330" }, "x":   2, "y": -6 } ],
+            "inactive": [ { "tmpl": "block_inactive", "vars" : { "NAME": "B330" }, "x":   2, "y": -6 } ]
+        }
+    },
+    "states": {
+        "normal": [
+            { "#": "B321 red" },
+            { "op": "line", "x1": "26-2", "y1":  20      , "x2": "38-2", "y2": "20-12+1", "rgb": "#200000" },
+            { "op": "line", "x1": "38-2", "y1": "20-12+1", "x2":  64   , "y2": "20-12+1", "rgb": "#200000" },
+            { "op": "line", "x1": "26+5", "y1":  20      , "x2":  38   , "y2": "20-12+5", "rgb": "#200000" },
+            { "op": "line", "x1": "38  ", "y1": "20-12+5", "x2":  64   , "y2": "20-12+5", "rgb": "#200000" },
+            { "#": "B320 green" },
+            { "op": "rect", "x": 0, "y": "20-1", "w": 64, "h": 6, "rgb": "#00FF00" }
+        ],
+        "reverse": [
+            { "#": "B320 red" },
+            { "op": "line", "x1": "26", "y1":  20   , "x2": 64, "y2":  20   , "rgb": "#200000" },
+            { "op": "line", "x1": "26", "y1": "20+4", "x2": 64, "y2": "20+4", "rgb": "#200000" },
+            { "#": "B321 green" },
+            { "op": "poly", "rgb": "#00FF00", "pts": [
+                { "x": 0, "y": "20-1" }, { "x": "26-2", "y": "20-1" },
+                { "x": "38-2", "y": "20-12" }, { "x": 64, "y": "20-12" },
+                { "x": 64, "y": "20-12+6" },
+                { "x": 38, "y": "20-12+6" },
+                { "x": 26, "y": "20+5" }, { "x": 0, "y": "20+5" }
+             ] }
+        ]
+    }
+}
+    """)
 
 
 def loop() -> None:
@@ -452,8 +385,13 @@ def loop() -> None:
     init_display()
 
     mk_script()
-    state_index = 0
-    _states[state_index].display(_matrix.display)
+    states = [ "normal", "reverse" ]
+    active_blocks = {
+        0: [ "b330", "b320" ],
+        1: [ "b330", "b321" ],
+    }
+    state_index = 0 
+    _script.display(_matrix.display, states[state_index], active_blocks[state_index])
 
     while True:
         start_ts = time.monotonic()
@@ -461,8 +399,8 @@ def loop() -> None:
         _mqtt_loop()    # This takes 1~2 seconds
         _matrix.display.refresh(minimum_frames_per_second=0)
         if not _button_down.value or not _button_up.value:
-            state_index = (state_index + 1) % len(_states)
-            _states[state_index].display(_matrix.display)
+            state_index = (state_index + 1) % len(states)
+            _script.display(_matrix.display, states[state_index], active_blocks[state_index])
         end_ts = time.monotonic()
         delta_ts = end_ts - start_ts
         if delta_ts < 1: time.sleep(0.25)  # prevent busy loop
