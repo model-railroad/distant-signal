@@ -3,23 +3,75 @@
 # License: MIT
 #
 # Parses a mini script that defines a screen rendering.
+# The script is encoded in a JSON structure as follows:
+# - At the top level, a dictionary with keys "title", "blocks", and "states" is expected.
+# - At the inner level, we encode graphics primitives for drawing lines, rectangles, polygons, and text,
+#   which is called a "drawing instruction list".
 #
-# Instructions available:
+# Title: the "title" entry is a single drawing instruction list (see below).
+# - The title is optional.
+# - If present, it is always drawn first (bottom z order).
 #
+# States: the "states" entry is a dictionary of named states, each with their own drawing instruction list.
+# - The states key is optional, or it can be empty.
+# - States are drawn after (above) the title.
+# - Distant Signal will then select one state to draw. All others are ignored.
+# - For example, a panel representing a turnout would typically have 2 states: "normal" and "thrown" (or "reverse"),
+#   and may define an additional error state. Only one of these states can be selected and drawn at the same time.
+#
+# Blocks: the "blocks" entry is a dictionary of named blocks.
+# - Each block must have 2 inner keys: "active" and "inactive". Each one is a drawing instruction list.
+# - Blocks are drawn after (above) the current state.
+# - For each block defined, Distant Signal will keep an active / inactive status (matching a block being empty or
+#   occupied).
+# - If the current state name has the special suffix ":no-blocks", the blocks are not drawn. This is useful for example
+#   for an initial state (no configuration known) or an error state.
+#   For example, we would name the error state "error:no-blocks".
+#
+# Drawing Instruction List
+# ------------------------
+# A drawing instruction list can contain the following primitives:
+# 
 # Text:
-# T x y "string" [#RRGGBB] [scale1|scale2] [font1|font2] ;
+# {"op": "text", "x": INT|STR, "y": INT|STR, "t": "TEXT", "rgb": "#RRGGBB", "scale": [1|2], "font": [1|2] }
+# - x and y can be either a number or a simple expression with numbers and + and - operations (e.g. "64-26+5").
+# - Negative numbers are interpreted as offsets from the left/bottom size of the screen.
+# - "font" and "scale" are optional. When missing, they evaluate to 1.
 #
 # Rect (filled):
-# R x y w h [#RRGGBB] ;
+# {"op": "rect", "x": INT|STR, "y": INT|STR, "w": INT|STR, "h": INT|STR, "rgb": "#RRGGBB" }
+# - x, y, w, and h can be either a number or a simple expression with numbers and + and - operations (e.g. "64-26+5").
+# - Negative numbers for x and y are interpreted as offsets from the left/bottom size of the screen.
 #
 # Line:
-# L x y w h [#RRGGBB] ;
+# {"op": "line", "x1": INT|STR, "y1": INT|STR, "x2": INT|STR, "y2": INT|STR, "rgb": "#RRGGBB" }
+# - x1, y1, x2, and y2 can be either a number or a simple expression with numbers and + and - operations (e.g. "64-26+5").
+# - Negative numbers for x and y are interpreted as offsets from the left/bottom size of the screen.
+# - Due to the underlying library used, lines are always 2 pixels in width.
 #
-# Polygon (3 points or more):
-# P x1 y1 x2 y2 x3 y3 [.. xN yN] [#RRGGBB] ;
+# Polygon (filled, 3 points or more):
+# {"op": "line", pts: [ { "x": INT|STR, "y": INT|STR } * 3+ ], "rgb": "#RRGGBB" }
+# - pts is a list of { "x": INT|STR, "y": INT|STR }.
+# - x, and y can be either a number or a simple expression with numbers and + and - operations (e.g. "64-26+5").
+# - Negative numbers for x and y are interpreted as offsets from the left/bottom size of the screen.
+# - There must be at least 3 points, expressed in a consistent perimeter order.
+# - The polygon is automatically closed.
+# - The underlying library seem to reasonably handle concave polygons.
 #
-# Negative x/y are relative to the end of the display.
-# The last RGB / scale / font attribute is reused for follow up instructions.
+# Template:
+# { "tmpl": "TEMPLATE_NAME", "vars" : { "VAR1": "VALUE1", ... }, "x": INT|STR, "y": INT|STR }
+# - A template injects a top-level drawing instruction list in-place an optional x/y offset and an optional value replacement.
+# - A top-level key is expected that matches the TEMPLATE_NAME. That key must be a drawing instruction list.
+# - Any instruction key matching one of the "vars" keys is replaced by the corresponding value before processing.
+# - x, and y are offsets applied to the template drawing instructions.
+#   They can be either a number or a simple expression with numbers and + and - operations (e.g. "64-26+5").
+# - Templates can include other templates; however they should not call back into themselves (infinite loop).
+#
+# Comments:
+# { "#": "anything here" }
+# - JSON does not allow for comments,; instead an instruction with a key "#" is interpreted as a comment and its content ignored.
+# - Note: in the current implementation, any unknown instruction is ignored (e.g. lacking an "op" key or with an invalid
+#   operand for "op"). This may be changed later.
 #
 
 import displayio
@@ -29,6 +81,7 @@ import vectorio
 from adafruit_display_text.label import Label
 
 FONT_Y_OFFSET = 3
+NO_BLOCK_SUFFIX = ":no-blocks"
 
 class Rgb:
     def __init__(self, rgb: str|Rgb):
@@ -263,7 +316,7 @@ class ScriptParser:
     def display(self, display, activeState="", activeBlocks=[]):
         for state_key in self._states:
             self._states[state_key].hidden = state_key != activeState
-        blocks_all_hidden = "-" in activeBlocks
+        blocks_all_hidden = activeState.endswith(NO_BLOCK_SUFFIX)
         for block_key in self._blocks:
             b = self._blocks[block_key]
             is_block_active = block_key in activeBlocks

@@ -307,8 +307,11 @@ def mk_script():
         }
     },
     "states": {
-        "error": [
-            {"op": "text", "x": "32-26", "y": 16, "t": "Not Connected", "rgb": "#2F2F00" }
+        "loading:no-blocks": [
+            {"op": "text", "x": 18, "y": 16, "t": "Loading", "rgb": "#2F2F00" }
+        ],
+        "error:no-blocks": [
+            {"op": "text", "x": 7, "y": 16, "t": "Not Connected", "rgb": "#2F2F00" }
         ],
         "normal": [
             { "#": "B321 red" },
@@ -362,11 +365,12 @@ def loop() -> None:
     init_display()
 
     mk_script()
-    states = [ "error", "normal", "reverse" ]
+    states = [ "loading:no-blocks", "error:no-blocks", "normal", "reverse" ]
     active_blocks = {
-        0: [ "-" ],
-        1: [ "b330", "b320" ],
-        2: [ "b330", "b321" ],
+        0: [ ],
+        1: [ ],
+        2: [ "b330", "b320" ],
+        3: [ "b330", "b321" ],
     }
     state_index = 0 
     _script.display(_matrix.display, states[state_index], active_blocks[state_index])
