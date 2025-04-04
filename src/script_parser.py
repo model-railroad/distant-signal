@@ -263,11 +263,12 @@ class ScriptParser:
     def display(self, display, activeState="", activeBlocks=[]):
         for state_key in self._states:
             self._states[state_key].hidden = state_key != activeState
+        blocks_all_hidden = "-" in activeBlocks
         for block_key in self._blocks:
             b = self._blocks[block_key]
             is_block_active = block_key in activeBlocks
-            b["active"].hidden = not is_block_active
-            b["inactive"].hidden = is_block_active
+            b["active"].hidden = blocks_all_hidden or not is_block_active
+            b["inactive"].hidden = blocks_all_hidden or is_block_active
         display.root_group = self._root
 
 
