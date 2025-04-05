@@ -29,16 +29,16 @@ from adafruit_matrixportal.matrix import Matrix
 from adafruit_display_text.label import Label
 from adafruit_bitmap_font import bitmap_font
 
-# from drawing_state import DrawingState
+from script_display import ScriptDisplay
 from script_parser import ScriptParser, FONT_Y_OFFSET
-
 
 _led = None
 _mqtt = None
 _matrix = None
 _fonts = []
 # _states = []
-_script = None
+_script_parser: ScriptParser = None
+_script_display: ScriptDisplay = None
 _boot_btn = None
 _button_down = None
 _button_up = None
@@ -196,7 +196,7 @@ def init_display():
     t.x = (SX - len(t.text) * 4) // 2
     t.y = SY // 2 - 2 + FONT_Y_OFFSET
     t.scale = 1
-    t.color = 0x202020
+    t.color = 0x2F2F00
     loading_group.append(t)
     display.root_group = loading_group
 
@@ -276,11 +276,15 @@ def blink() -> None:
         _last_blink_ts = now
         _next_blink = 1 - _next_blink
 
-def mk_script():
-    global _script
+def init_script():
+    global _script_parser, _script_display
 
-    _script = ScriptParser(SX, SY, _fonts)
-    _script.parseJson("""
+    _script_parser = ScriptParser(SX, SY, _fonts)
+    _script_display = ScriptDisplay(_script_parser, _matrix.display)
+    _script_display.loadFromNVM()
+
+    # DEBUG DEV
+    _script_display.newScript("""
 {
     "title":  [
         {"op": "text", "x": 0, "y": 0, "t": "T330", "rgb": "#3F3F3F", "scale": 2, "font": 2 }
@@ -308,10 +312,10 @@ def mk_script():
     },
     "states": {
         "loading:no-blocks": [
-            {"op": "text", "x": 18, "y": 16, "t": "Loading", "rgb": "#2F2F00" }
+            {"op": "text", "x": 18, "y": 18, "t": "Loading", "rgb": "#2F2F00" }
         ],
         "error:no-blocks": [
-            {"op": "text", "x": 7, "y": 16, "t": "Not Connected", "rgb": "#2F2F00" }
+            {"op": "text", "x": 7, "y": 18, "t": "Not Connected", "rgb": "#2F2F00" }
         ],
         "normal": [
             { "#": "B321 red" },
@@ -320,7 +324,7 @@ def mk_script():
             { "op": "line", "x1": "26  ", "y1": "20+5"   , "x2":  38   , "y2": "20-12+5", "rgb": "#2F0000" },
             { "op": "line", "x1": "38  ", "y1": "20-12+5", "x2":  64   , "y2": "20-12+5", "rgb": "#2F0000" },
             { "#": "B320 green as solid block" },
-            { "#": "rect", "x": 0, "y": "20-1", "w": 64, "h": 6, "rgb": "#007F00" }
+            { "#": "rect", "x": 0, "y": "20-1", "w": 64, "h": 6, "rgb": "#007F00" },
             { "#": "B320 green as lines" },
             { "op": "line", "x1": "0", "y1":  20   , "x2": 64, "y2":  20   , "rgb": "#007F00" },
             { "op": "line", "x1": "0", "y1": "20+4", "x2": 64, "y2": "20+4", "rgb": "#007F00" },
@@ -336,7 +340,7 @@ def mk_script():
                 { "x": 64, "y": "20-12+6" },
                 { "x": 38, "y": "20-12+6" },
                 { "x": 26, "y": "20+5" }, { "x": 0, "y": "20+5" }
-             ] }
+             ] },
             { "#": "B321 green as lines" },
             { "op": "line", "x1": "0", "y1":  20   , "x2": "26  ", "y2":  20   , "rgb": "#007F00" },
             { "op": "line", "x1": "0", "y1": "20+4", "x2": "26+1", "y2": "20+4", "rgb": "#007F00" },
@@ -348,6 +352,7 @@ def mk_script():
     }
 }
     """)
+
 
 
 def loop() -> None:
@@ -364,7 +369,7 @@ def loop() -> None:
 
     init_display()
 
-    mk_script()
+    init_script()
     states = [ "loading:no-blocks", "error:no-blocks", "normal", "reverse" ]
     active_blocks = {
         0: [ ],
@@ -372,8 +377,8 @@ def loop() -> None:
         2: [ "b330", "b320" ],
         3: [ "b330", "b321" ],
     }
-    state_index = 0 
-    _script.display(_matrix.display, states[state_index], active_blocks[state_index])
+    state_index = 2 
+    _script_parser.display(_matrix.display, states[state_index], active_blocks[state_index])
 
     while True:
         start_ts = time.monotonic()
@@ -382,7 +387,7 @@ def loop() -> None:
         _matrix.display.refresh(minimum_frames_per_second=0)
         if not _button_down.value or not _button_up.value:
             state_index = (state_index + 1) % len(states)
-            _script.display(_matrix.display, states[state_index], active_blocks[state_index])
+            _script_parser.display(_matrix.display, states[state_index], active_blocks[state_index])
         end_ts = time.monotonic()
         delta_ts = end_ts - start_ts
         if delta_ts < 1: time.sleep(0.25)  # prevent busy loop

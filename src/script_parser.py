@@ -207,7 +207,6 @@ class ScriptParser:
                 tmpl_vars.update(instruction["vars"])
                 tmpl_ofx = self._parseInt(instruction["x"], offset=ofx)
                 tmpl_ofy = self._parseInt(instruction["y"], offset=ofy)
-                print("@@ templ_ofy", instruction["y"], "+", ofy, "=>",tmpl_ofy )
                 self._parseInstructions(destGroup, jsonObj, tmpl_insts, tmpl_vars, tmpl_ofx, tmpl_ofy)
 
             elif "op" in instruction:
