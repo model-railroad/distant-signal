@@ -48,6 +48,11 @@ _logger.setLevel(logging.INFO)      # INFO or DEBUG
 SX = 64
 SY = 32
 
+# True for a 64x32 panel with an "HUB75-E" interface that actually uses 5 addr pins (A through E)
+# instead of just 4 to address 32 lines. We simulate this by creating a 64x64 matrix and only 
+# using the top half.
+HUB75E = True
+
 COL_OFF = (0, 0, 0)
 COL_RED = (255, 0, 0)
 COL_GREEN = (0, 255, 0)
@@ -171,17 +176,10 @@ def init_display():
     displayio.release_displays()
     _matrix = Matrix(
         width=64,
-        height=64,
+        height=SY*2 if HUB75E else SY,
         bit_depth=3,
-        serpentine=True,
-        tile_rows=1,
-        alt_addr_pins=[
-            board.MTX_ADDRA,
-            board.MTX_ADDRB,
-            board.MTX_ADDRC,
-            board.MTX_ADDRD,
-            board.MTX_ADDRE
-        ],
+        # serpentine=True,
+        # tile_rows=1,
     )
     display = _matrix.display
 
@@ -199,6 +197,7 @@ def init_display():
     t.color = 0x2F2F00
     loading_group.append(t)
     display.root_group = loading_group
+
 
 def _mqtt_on_connected(client, userdata, flags, rc):
     # This function will be called when the client is connected successfully to the broker.
@@ -377,7 +376,7 @@ def loop() -> None:
         2: [ "b330", "b320" ],
         3: [ "b330", "b321" ],
     }
-    state_index = 2 
+    state_index = 2
     _script_parser.display(_matrix.display, states[state_index], active_blocks[state_index])
 
     while True:

@@ -108,7 +108,7 @@ class ScriptDisplay:
                 return False
 
             script = s.decode()
-            print("@@ Read NVM:", self.script)
+            print("@@ Read NVM:", script)
             self.newScript(script)
             return True
         except Exception as e:
