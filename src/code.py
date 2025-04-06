@@ -45,14 +45,25 @@ _button_up = None
 _logger = logging.getLogger("DistantSignal")
 _logger.setLevel(logging.INFO)      # INFO or DEBUG
 
+# Size of the LED Matrix panel to display
 SX = 64
 SY = 32
 
 # True for a 64x32 panel with an "HUB75-E" interface that actually uses 5 addr pins (A through E)
 # instead of just 4 to address 32 lines. We simulate this by creating a 64x64 matrix and only 
-# using the top half.
+# using the top half (i.e. SY=32 but init Matrix with height=64).
+# For an AdaFruit 64x32 MatrixPortal-S3 compatible display, set this to False.
+# Some non-AdaFruit panels with an HUB75-E need this to True. YMMV.
 HUB75E = True
 
+# Number of MSB bits used in each RGB color.
+# 2 means that only RGB colors with #80 or #40 are visible, and anything lower is black.
+# 3 means that only RGB colors with #80, #40, or #20 are visible, and anything lower is black.
+# The max possible is 5 (the underlying CircuitPython RGBMatrix encodes its framebuffers
+# in RGB565) and will produce visible flickering for the low value colors.
+RGB_BIT_DEPTH = 2
+
+# Possible colors for the status NeoPixel LED (not for the matrix display).
 COL_OFF = (0, 0, 0)
 COL_RED = (255, 0, 0)
 COL_GREEN = (0, 255, 0)
@@ -177,7 +188,7 @@ def init_display():
     _matrix = Matrix(
         width=64,
         height=SY*2 if HUB75E else SY,
-        bit_depth=3,
+        bit_depth=RGB_BIT_DEPTH,
         # serpentine=True,
         # tile_rows=1,
     )
@@ -194,7 +205,7 @@ def init_display():
     t.x = (SX - len(t.text) * 4) // 2
     t.y = SY // 2 - 2 + FONT_Y_OFFSET
     t.scale = 1
-    t.color = 0x2F2F00
+    t.color = 0xFFFF00
     loading_group.append(t)
     display.root_group = loading_group
 
@@ -286,14 +297,14 @@ def init_script():
     _script_display.newScript("""
 {
     "title":  [
-        {"op": "text", "x": 0, "y": 0, "t": "T330", "rgb": "#3F3F3F", "scale": 2, "font": 2 }
+        {"op": "text", "x": 0, "y": 0, "t": "T330", "rgb": "#7F7F7F", "scale": 2, "font": 2 }
     ],
     "block_active": [
-        {"op": "rect", "x": -2, "y": -1, "w": "16+3", "h": "7", "rgb": "#2F2F00" },
+        {"op": "rect", "x": -2, "y": -1, "w": "16+3", "h": "7", "rgb": "#7F7F00" },
         {"op": "text", "x":  0, "y":  0, "t": "NAME", "rgb": "#000000" }
     ],
     "block_inactive": [
-        {"op": "text", "x":  0, "y": 0, "t": "NAME", "rgb": "#2F2F2F" }
+        {"op": "text", "x":  0, "y": 0, "t": "NAME", "rgb": "#7F7F7F" }
     ],
     "blocks": {
         "b321": {
@@ -311,17 +322,17 @@ def init_script():
     },
     "states": {
         "loading:no-blocks": [
-            {"op": "text", "x": 18, "y": 18, "t": "Loading", "rgb": "#2F2F00" }
+            {"op": "text", "x": 18, "y": 18, "t": "Loading", "rgb": "#7F7F00" }
         ],
         "error:no-blocks": [
-            {"op": "text", "x": 7, "y": 18, "t": "Not Connected", "rgb": "#2F2F00" }
+            {"op": "text", "x": 7, "y": 18, "t": "Not Connected", "rgb": "#7F7F00" }
         ],
         "normal": [
             { "#": "B321 red" },
-            { "op": "line", "x1": "26-2", "y1":  20      , "x2": "38-2", "y2": "20-12+1", "rgb": "#2F0000" },
-            { "op": "line", "x1": "38-2", "y1": "20-12+1", "x2":  64   , "y2": "20-12+1", "rgb": "#2F0000" },
-            { "op": "line", "x1": "26  ", "y1": "20+5"   , "x2":  38   , "y2": "20-12+5", "rgb": "#2F0000" },
-            { "op": "line", "x1": "38  ", "y1": "20-12+5", "x2":  64   , "y2": "20-12+5", "rgb": "#2F0000" },
+            { "op": "line", "x1": "26-2", "y1":  20      , "x2": "38-2", "y2": "20-12+1", "rgb": "#7F0000" },
+            { "op": "line", "x1": "38-2", "y1": "20-12+1", "x2":  64   , "y2": "20-12+1", "rgb": "#7F0000" },
+            { "op": "line", "x1": "26  ", "y1": "20+5"   , "x2":  38   , "y2": "20-12+5", "rgb": "#7F0000" },
+            { "op": "line", "x1": "38  ", "y1": "20-12+5", "x2":  64   , "y2": "20-12+5", "rgb": "#7F0000" },
             { "#": "B320 green as solid block" },
             { "#": "rect", "x": 0, "y": "20-1", "w": 64, "h": 6, "rgb": "#007F00" },
             { "#": "B320 green as lines" },
@@ -330,8 +341,8 @@ def init_script():
         ],
         "reverse": [
             { "#": "B320 red" },
-            { "op": "line", "x1": "26", "y1":  20   , "x2": 64, "y2":  20   , "rgb": "#2F0000" },
-            { "op": "line", "x1": "26", "y1": "20+4", "x2": 64, "y2": "20+4", "rgb": "#2F0000" },
+            { "op": "line", "x1": "26", "y1":  20   , "x2": 64, "y2":  20   , "rgb": "#7F0000" },
+            { "op": "line", "x1": "26", "y1": "20+4", "x2": 64, "y2": "20+4", "rgb": "#7F0000" },
             { "#": "B321 green as a solid block" },
             { "#": "poly", "rgb": "#007F00", "pts": [
                 { "x": 0, "y": "20-1" }, { "x": "26-2", "y": "20-1" },
