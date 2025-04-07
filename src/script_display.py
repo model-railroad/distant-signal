@@ -17,12 +17,15 @@ class ScriptDisplay:
         self._active_state = ""
         self._active_blocks = {}
 
-    def newScript(self, script) -> None:
+    def newScript(self, script) -> bool:
+        # Return true if the script has changed.
         script_hash = self._scriptHash(script)
         if script_hash != self._script_hash:
             self._parser.parseJson(script)
             if self._onChanged(script):
                 self._script_hash = script_hash
+                return True
+        return False
 
     def loadFromNVM(self) -> bool:
         # This calls newScript() on success

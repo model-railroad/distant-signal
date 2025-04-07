@@ -323,6 +323,12 @@ class ScriptParser:
             b["inactive"].hidden = blocks_all_hidden or is_block_active
         display.root_group = self._root
 
+    def states(self):
+        return self._states.keys()
+
+    def blocks(self):
+        return self._blocks.keys()
+
 
 #~~
 

@@ -36,7 +36,18 @@ _led = None
 _mqtt = None
 _matrix = None
 _fonts = []
-# _states = []
+_mqtt_states = {
+    "script": {
+        "topic": "",
+    },
+    "turnout": {
+        "topic": "",
+        "state": "normal",
+    },
+    "blocks": {
+        # block_name => { topic:str, state:str }
+    }
+}
 _script_parser: ScriptParser = None
 _script_display: ScriptDisplay = None
 _boot_btn = None
@@ -84,13 +95,13 @@ COL_LED_ERROR = {
     CODE_MQTT_RETRY: COL_ORANGE,
 }
 
-MQTT_TOPIC_ROOT          = "distantsignal"
-MQTT_TOPIC_SUBSCRIPTION  = "/#"
-MQTT_TOPIC_LENGTH        = "/length"
-MQTT_TOPIC_BRIGHTNESS    = "/brightness"
-MQTT_TOPIC_SCRIPT_INIT   = "/script/init"
-MQTT_TOPIC_SCRIPT_EVENT  = "/script/event"
-MQTT_TOPIC_EVENT_TRIGGER = "/event/trigger"
+# MQTT Topics used:
+MQTT_TURNOUT              = "t330"                          # overriden in settings.toml
+MQTT_TOPIC_TURNOUT_SCRIPT = "distantsignal/%(T)s/script"    # where T is MQTT_TURNOUT
+# Turnout state is a string matching one of the JSON "states" keys.
+MQTT_TOPIC_TURNOUT_STATE  = "turnout/%(T)s/state"           # where T is MQTT_TURNOUT
+# Block state is a string matching either "active" or "inactive"
+MQTT_TOPIC_BLOCk_STATE    = "block/%(B)s/state"             # where B is one of the JSON "blocks" keys
 
 # the current working directory (where this file is)
 CWD = ("/" + __file__).rsplit("/", 1)[
@@ -106,13 +117,13 @@ def init() -> None:
     global _led, _boot_btn
 
     try:
-        mqtt_topic_root = os.getenv("MQTT_TOPIC_ROOT", "").strip()
-        if mqtt_topic_root:
-            global MQTT_TOPIC_ROOT
-            MQTT_TOPIC_ROOT = mqtt_topic_root
-            print("@@ Settings.toml: MQTT_TOPIC_ROOT set to", MQTT_TOPIC_ROOT)
+        mqtt_turnout = os.getenv("MQTT_TURNOUT", "").strip()
+        if mqtt_turnout:
+            global MQTT_TURNOUT
+            MQTT_TURNOUT = mqtt_turnout
+            print("@@ Settings.toml: MQTT_TURNOUT set to", MQTT_TURNOUT)
     except Exception as e:
-        print("@@ Settings.toml: Invalid MQTT_TOPIC_ROOT variable ", e)
+        print("@@ Settings.toml: Invalid MQTT_TURNOUT variable ", e)
 
     _led = neopixel.NeoPixel(board.NEOPIXEL, 1)
     _led.brightness = 0.1
@@ -182,6 +193,16 @@ def init_mqtt() -> None:
         blink_error(CODE_MQTT_FAILED, num_loop=3)
         _mqtt = "retry"
 
+def compute_mqtt_topics():
+    # Compute all MQTT Topic keys
+    _mqtt_states["script" ]["topic"] = MQTT_TOPIC_TURNOUT_SCRIPT % { "T": MQTT_TURNOUT }
+    _mqtt_states["turnout"]["topic"] = MQTT_TOPIC_TURNOUT_STATE  % { "T": MQTT_TURNOUT }
+    for block_name in _script_parser.blocks():
+        _mqtt_states["blocks"][block_name] = {
+            "topic": MQTT_TOPIC_BLOCk_STATE % { "B": block_name },
+            "state": "inactive",
+        }
+
 def init_display():
     global _matrix, _fonts
     displayio.release_displays()
@@ -209,12 +230,18 @@ def init_display():
     loading_group.append(t)
     display.root_group = loading_group
 
-
 def _mqtt_on_connected(client, userdata, flags, rc):
     # This function will be called when the client is connected successfully to the broker.
     print("@Q MQTT: Connected")
     # Subscribe to all changes.
-    client.subscribe(MQTT_TOPIC_ROOT + MQTT_TOPIC_SUBSCRIPTION)
+    def _sub(t):
+        if t:
+            print("@@ MQTT: Subscribe to", t)
+            client.subscribe(t)
+    _sub(_mqtt_states["script" ]["topic"])
+    _sub(_mqtt_states["turnout" ]["topic"])
+    for block_topic in _mqtt_states["blocks"].values():
+        _sub(block_topic["topic"])
     blink_error(CODE_OK, num_loop=0)
 
 def _mqtt_on_disconnected(client, userdata, rc):
@@ -229,16 +256,17 @@ def _mqtt_on_message(client, topic, message):
     """
     print(f"@Q MQTT: New message on topic {topic}: {message}")
     try:
-        if topic == MQTT_TOPIC_ROOT + MQTT_TOPIC_LENGTH:
-            pass
-        elif topic == MQTT_TOPIC_ROOT + MQTT_TOPIC_BRIGHTNESS:
-            pass
-        elif topic == MQTT_TOPIC_ROOT + MQTT_TOPIC_SCRIPT_INIT:
-            pass
-        elif topic == MQTT_TOPIC_ROOT + MQTT_TOPIC_SCRIPT_EVENT:
-            pass
-        elif topic == MQTT_TOPIC_ROOT + MQTT_TOPIC_EVENT_TRIGGER:
-            pass
+        if topic == _mqtt_states["script" ]["topic"]:
+            if _script_display.newScript(message):
+                compute_mqtt_topics()
+                # TBD we need to disconnect/reconnect or resubscribe on MQTT topics
+        elif topic == _mqtt_states["turnout" ]["topic"]:
+            _mqtt_states["turnout" ]["state"] = message
+        else:
+            for block_struct in _mqtt_states["blocks"].values():
+                if topic == block_struct["topic"]:
+                    block_struct["state"] = message
+                    break
     except Exception as e:
         print(f"@@ MQTT: Failed to process {topic}: {message}", e)
 
@@ -364,9 +392,16 @@ def init_script():
     """)
 
 
+def update_display():
+    t_state = _mqtt_states["turnout"]["state"]
+    b_states = [ b for b,v in _mqtt_states["blocks"].items() if v["state"] == "active" ]
+    _script_parser.display(_matrix.display, t_state, b_states)
 
 def loop() -> None:
     print("@@ loop")
+
+    init_buttons()
+    init_display()
 
     # # Sleep a few seconds at boot
     _led.fill(COL_LED_ERROR[CODE_OK])
@@ -376,28 +411,20 @@ def loop() -> None:
         time.sleep(1)
 
     blink()
-
-    init_display()
-
+    init_wifi()
     init_script()
-    states = [ "loading:no-blocks", "error:no-blocks", "normal", "reverse" ]
-    active_blocks = {
-        0: [ ],
-        1: [ ],
-        2: [ "b330", "b320" ],
-        3: [ "b330", "b321" ],
-    }
-    state_index = 2
-    _script_parser.display(_matrix.display, states[state_index], active_blocks[state_index])
+    compute_mqtt_topics()
+    init_mqtt()
+    update_display()
 
     while True:
         start_ts = time.monotonic()
         blink()
         _mqtt_loop()    # This takes 1~2 seconds
         _matrix.display.refresh(minimum_frames_per_second=0)
-        if not _button_down.value or not _button_up.value:
-            state_index = (state_index + 1) % len(states)
-            _script_parser.display(_matrix.display, states[state_index], active_blocks[state_index])
+        # if not _button_down.value or not _button_up.value:
+        #     state_index = (state_index + 1) % len(states)
+        update_display()
         end_ts = time.monotonic()
         delta_ts = end_ts - start_ts
         if delta_ts < 1: time.sleep(0.25)  # prevent busy loop
@@ -406,9 +433,6 @@ def loop() -> None:
 
 if __name__ == "__main__":
     init()
-    init_buttons()
-    init_wifi()
-    init_mqtt()
     loop()
 
 #~~
