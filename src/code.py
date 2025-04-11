@@ -122,6 +122,7 @@ _script_loader: ScriptLoader = None
 _parser_group: displayio.Group = None
 _wifi_off_tile = None
 _wifi_on_tile = None
+_wifi_icon_state = None
 _loading_tile = None
 _boot_btn = None
 _button_down = None
@@ -171,7 +172,7 @@ def init_wifi() -> bool:
         return True
     except ConnectionError:
         print("@@ WiFI Failed to connect to WiFi with provided credentials")
-        blink_error(_CODE_RETRY, num_loop=5)
+        blink_led_error(_CODE_RETRY, num_loop=5)
         return False
 
 def init_mqtt() -> None:
@@ -182,7 +183,7 @@ def init_mqtt() -> None:
         print("@@ MQTT: disabled")
         # This is a core feature so do we not ignore this error in this project
         # and we'll retry again and again and again
-        blink_error(_CODE_RETRY, num_loop=5)
+        blink_led_error(_CODE_RETRY, num_loop=5)
         return
     port = int(os.getenv("MQTT_BROKER_PORT", 1883))
     user = os.getenv("MQTT_USERNAME", "")
@@ -215,7 +216,7 @@ def init_mqtt() -> None:
         # called before mqtt.connect() returns, which changes the global core state.
     except Exception as e:
         print("@@ MQTT: Failed Connecting with ", e)
-        blink_error(_CODE_RETRY, num_loop=5)
+        blink_led_error(_CODE_RETRY, num_loop=5)
         del _mqtt
         _mqtt = None
         _core_state = _CORE_MQTT_FAILED
@@ -302,7 +303,7 @@ def _mqtt_on_connected(client, userdata, flags, rc):
     _core_state = _CORE_MQTT_CONNECTED
     # Actual subscription is handled by subscribe_mqtt_topics() called from main core state loop.
     print("@Q MQTT: Connected")
-    blink_error(_CODE_OK, num_loop=0)
+    blink_led_error(_CODE_OK, num_loop=0)
 
 def _mqtt_on_disconnected(client, userdata, rc):
     # This method is called when the client is disconnected
@@ -332,7 +333,7 @@ def _mqtt_on_message(client, topic, message):
                     break
     except Exception as e:
         print(f"@@ MQTT: Failed to process {topic}: {message}", e)
-        blink_error(_CODE_RETRY, num_loop=0)
+        blink_led_error(_CODE_RETRY, num_loop=0)
 
 _mqtt_retry_ts = 0
 def _mqtt_loop():
@@ -340,25 +341,52 @@ def _mqtt_loop():
     if _mqtt is None:
         return
     try:
+        # This call has an integrated timeout and takes either 1 or 2 seconds
+        # to complete with the default timeout = 1 value.
         _mqtt.loop()
     except Exception as e:
         print("@@ MQTT: Failed with ", e)
-        blink_error(_CODE_RETRY, num_loop=1)
+        blink_led_error(_CODE_RETRY, num_loop=1)
         try:
             _mqtt.reconnect()
-            blink_error(_CODE_OK, num_loop=0)
+            blink_led_error(_CODE_OK, num_loop=0)
         except Exception as e:
             print("@@ MQTT: Reconnect failed with ", e)
-            blink_error(_CODE_RETRY, num_loop=1)
+            blink_led_error(_CODE_RETRY, num_loop=1)
             del _mqtt
             _mqtt = None
             _core_state = _CORE_MQTT_FAILED
 
+_next_blink_wifi_ts = 0
 def display_wifi_icon(wifi: bool|None) -> None:
-    _wifi_on_tile.hidden = wifi is None or wifi != True
-    _wifi_off_tile.hidden = wifi is None or wifi != False
+    global _wifi_icon_state, _next_blink_wifi_ts
+    _wifi_icon_state = wifi
+    _wifi_on_tile.hidden = True
+    _wifi_off_tile.hidden = True
+    _next_blink_wifi_ts = time.monotonic()
 
-def blink_error(error_code, num_loop=-1):
+def blink_wifi() -> None:
+    global _next_blink_wifi_ts
+    if _wifi_icon_state is None:
+        return
+    now = time.monotonic()
+    if _wifi_icon_state:
+        # "Wifi OK" blinks for 1 second every 30 seconds
+        if now > _next_blink_wifi_ts:
+            _wifi_on_tile.hidden = not _wifi_on_tile.hidden
+            if _wifi_on_tile.hidden:
+                _next_blink_wifi_ts = now + 30
+            else:
+                _next_blink_wifi_ts = now + 0.75
+    else:
+        # "Wifi FAIL" blinks 5 seconds on, 2 seconds off
+            _wifi_off_tile.hidden = not _wifi_off_tile.hidden
+            if _wifi_on_tile.hidden:
+                _next_blink_wifi_ts = now + 1
+            else:
+                _next_blink_wifi_ts = now + 1
+
+def blink_led_error(error_code, num_loop=-1):
     _led.fill(_COL_LED_ERROR[error_code])
     _led.brightness = 0.1
     time.sleep(0.5)
@@ -370,15 +398,15 @@ def blink_error(error_code, num_loop=-1):
         time.sleep(1)
         num_loop -= 1
 
-_last_blink_ts = 0
-_next_blink = 1
-def blink() -> None:
-    global _last_blink_ts, _next_blink
-    _led.brightness = 0.1 if _next_blink else 0
-    now = time.time()
-    if now - _last_blink_ts > 1:
-        _last_blink_ts = now
-        _next_blink = 1 - _next_blink
+_last_blink_led_ts = 0
+_next_blink_led = 1
+def blink_led() -> None:
+    global _last_blink_led_ts, _next_blink_led
+    _led.brightness = 0.1 if _next_blink_led else 0
+    now = time.monotonic()
+    if now - _last_blink_led_ts > 1:
+        _last_blink_led_ts = now
+        _next_blink_led = 1 - _next_blink_led
 
 def init_script():
     global _script_parser, _script_loader
@@ -406,7 +434,7 @@ def init_script():
         except Exception as e:
             # The default script _should_ work. Failing to parse it is critical.
             print("@@ InitScript failed to read", _DEFAULT_SCRIPT_PATH, e)
-            blink_error(_CODE_FATAL)
+            blink_led_error(_CODE_FATAL)
     del script
     gc.collect()
     update_script_settings()
@@ -424,10 +452,10 @@ if __name__ == "__main__":
     _led.fill(_COL_LED_ERROR[_CODE_OK])
     for i in range(0, 3):
         print(i)
-        blink()
+        blink_led()
         time.sleep(1)
 
-    blink()
+    blink_led()
     init_script()   
     _script_loader.updateDisplay()
     _loading_tile.hidden = True
@@ -436,7 +464,7 @@ if __name__ == "__main__":
     _old_cs = None
     while True:
         start_ts = time.monotonic()
-        blink()
+        blink_led()
 
         # Handle core state
         if _core_state == _CORE_INIT:
@@ -457,7 +485,8 @@ if __name__ == "__main__":
             subscribe_mqtt_topics()
             _core_state = _CORE_MQTT_LOOP
         elif _core_state == _CORE_MQTT_LOOP:
-            _mqtt_loop()    # This takes 1~2 seconds
+            # The MQTT library loop takes exactly 1 or 2 seconds to complete
+            _mqtt_loop()
             # Process any pending script received by _mqtt_on_message()
             if _mqtt_pending_script is not None:
                 print("@@ Loop: Process new pending script")
@@ -471,6 +500,7 @@ if __name__ == "__main__":
             print("@@ CORE STATE:", _old_cs, "=>", _core_state)
             _old_cs = _core_state
 
+        blink_wifi()
         _matrix.display.refresh(minimum_frames_per_second=0)
         _script_loader.updateDisplay()
         end_ts = time.monotonic()
