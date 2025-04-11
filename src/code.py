@@ -257,7 +257,7 @@ def _mqtt_on_message(client, topic, message):
     print(f"@Q MQTT: New message on topic {topic}: {message}")
     try:
         if topic == _mqtt_states["script" ]["topic"]:
-            if _script_display.newScript(message):
+            if _script_display.newScript(script=message, saveToNVM=True):
                 compute_mqtt_topics()
                 # TBD we need to disconnect/reconnect or resubscribe on MQTT topics
         elif topic == _mqtt_states["turnout" ]["topic"]:
@@ -319,10 +319,10 @@ def init_script():
 
     _script_parser = ScriptParser(SX, SY, _fonts)
     _script_display = ScriptDisplay(_script_parser, _matrix.display)
-    _script_display.loadFromNVM()
-
-    # DEBUG DEV
-    _script_display.newScript("""
+    
+    if not _script_display.loadFromNVM():
+        # Load a default script, but don't save it to the NVM
+        _script_display.newScript(saveToNVM=False, script="""
 {
     "title":  [
         {"op": "text", "x": 0, "y": 0, "t": "T330", "rgb": "#7F7F7F", "scale": 2, "font": 2 }
@@ -378,7 +378,7 @@ def init_script():
                 { "x": 64, "y": "20-12+6" },
                 { "x": 38, "y": "20-12+6" },
                 { "x": 26, "y": "20+5" }, { "x": 0, "y": "20+5" }
-             ] },
+            ] },
             { "#": "B321 green as lines" },
             { "op": "line", "x1": "0", "y1":  20   , "x2": "26  ", "y2":  20   , "rgb": "#007F00" },
             { "op": "line", "x1": "0", "y1": "20+4", "x2": "26+1", "y2": "20+4", "rgb": "#007F00" },

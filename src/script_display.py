@@ -17,12 +17,12 @@ class ScriptDisplay:
         self._active_state = ""
         self._active_blocks = {}
 
-    def newScript(self, script) -> bool:
+    def newScript(self, script: str, saveToNVM:bool) -> bool:
         # Return true if the script has changed.
         script_hash = self._scriptHash(script)
         if script_hash != self._script_hash:
             self._parser.parseJson(script)
-            if self._onChanged(script):
+            if self._onChanged(script, saveToNVM):
                 self._script_hash = script_hash
                 return True
         return False
@@ -41,16 +41,18 @@ class ScriptDisplay:
             self._active_blocks[block] = active
             self._update()
 
-    def _onChanged(self, script):
-        saved = self._saveToNVM(script)
+    def _onChanged(self, script: str, saveToNVM:bool) -> None:
+        saved = True
+        if saveToNVM:
+            saved = self._saveToNVM(script)
         self._update()
         return saved
 
-    def _update(self):
+    def _update(self) -> None:
         active_blocks = [ k for k,v in self._active_blocks.items() if v ]
         self._parser.display(self._display, self._active_state, active_blocks)
 
-    def _scriptHash(self, script):
+    def _scriptHash(self, script) -> str:
         m = adafruit_hashlib.sha1()
         m.update(script.encode())
         return m.hexdigest()
@@ -78,7 +80,7 @@ class ScriptDisplay:
                 crc_var = crc_var ^ i
             b[5] = crc_var
 
-            print("@@ Write NVM: ", b.hex())
+            print("@@ Write NVM:", len(b), "bytes")
             microcontroller.nvm[0 : len(b)] = b
             return True
         except Exception as e:
@@ -111,8 +113,8 @@ class ScriptDisplay:
                 return False
 
             script = s.decode()
-            print("@@ Read NVM:", script)
-            self.newScript(script)
+            print("@@ Read NVM:", len(script), "characters")
+            self.newScript(script, saveToNVM=False)
             return True
         except Exception as e:
             print("@@ Read NVM failed: ", e)
