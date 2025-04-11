@@ -81,6 +81,7 @@ import re
 import vectorio
 from adafruit_display_text.label import Label
 
+# These 2 "constants" are exported for external users
 FONT_Y_OFFSET = 3
 NO_BLOCK_SUFFIX = ":no-blocks"
 

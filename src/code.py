@@ -21,6 +21,9 @@ import vectorio
 import wifi
 from digitalio import DigitalInOut, Direction, Pull
 
+# See https://github.com/micropython/micropython/issues/573 for const() details
+from micropython import const
+
 # Bundle libraries
 import neopixel
 import adafruit_connection_manager
@@ -53,60 +56,60 @@ _logger = logging.getLogger("DistantSignal")
 _logger.setLevel(logging.INFO)      # INFO or DEBUG
 
 # Size of the LED Matrix panel to display
-SX = 64
-SY = 32
+_SX = const(64)
+_SY = const(32)
 
 # True for a 64x32 panel with an "HUB75-E" interface that actually uses 5 addr pins (A through E)
 # instead of just 4 to address 32 lines. We simulate this by creating a 64x64 matrix and only 
 # using the top half (i.e. SY=32 but init Matrix with height=64).
 # For an AdaFruit 64x32 MatrixPortal-S3 compatible display, set this to False.
 # Some non-AdaFruit panels with an HUB75-E need this to True. YMMV.
-HUB75E = True
+_HUB75E = const(True)
 
 # Number of MSB bits used in each RGB color.
 # 2 means that only RGB colors with #80 or #40 are visible, and anything lower is black.
 # 3 means that only RGB colors with #80, #40, or #20 are visible, and anything lower is black.
 # The max possible is 5 (the underlying CircuitPython RGBMatrix encodes its framebuffers
 # in RGB565) and will produce visible flickering for the low value colors.
-RGB_BIT_DEPTH = 2
+_RGB_BIT_DEPTH = const(2)
 
 # Possible colors for the status NeoPixel LED (not for the matrix display).
-COL_OFF = (0, 0, 0)
-COL_RED = (255, 0, 0)
-COL_GREEN = (0, 255, 0)
-COL_BLUE = (0, 0, 255)
-COL_PURPLE = (255, 0, 255)      # FF00FF
-COL_ORANGE = (255, 40, 0)       # FF2800
-COL_YELLOW = (255, 112, 0)      # FF7000
+_COL_OFF    = const( (  0,   0,   0) )
+_COL_RED    = const( (255,   0,   0) )
+_COL_GREEN  = const( (  0, 255,   0) )
+_COL_BLUE   = const( (  0,   0, 255) )
+_COL_PURPLE = const( (255,   0, 255) )      # FF00FF
+_COL_ORANGE = const( (255,  40,   0) )      # FF2800
+_COL_YELLOW = const( (255, 112,   0) )      # FF7000
 
 # We use the LED color to get init status
-CODE_OK = "ok"
-CODE_WIFI_FAILED = "wifi_failed"
-CODE_MQTT_FAILED = "mqtt_failed"
-CODE_MQTT_RETRY  = "mqtt_retry"
-COL_LED_ERROR = {
-    CODE_OK: COL_GREEN,
-    CODE_WIFI_FAILED: COL_PURPLE,
-    CODE_MQTT_FAILED: COL_BLUE,
-    CODE_MQTT_RETRY: COL_ORANGE,
+_CODE_OK = const("ok")
+_CODE_WIFI_FAILED = const("wifi_failed")
+_CODE_MQTT_FAILED = const("mqtt_failed")
+_CODE_MQTT_RETRY  = const("mqtt_retry")
+_COL_LED_ERROR = {
+    _CODE_OK: _COL_GREEN,
+    _CODE_WIFI_FAILED: _COL_PURPLE,
+    _CODE_MQTT_FAILED: _COL_BLUE,
+    _CODE_MQTT_RETRY: _COL_ORANGE,
 }
 
 # MQTT Topics used:
-MQTT_TURNOUT              = "t330"                          # overriden in settings.toml
-MQTT_TOPIC_TURNOUT_SCRIPT = "distantsignal/%(T)s/script"    # where T is MQTT_TURNOUT
+_MQTT_TURNOUT              = "t330"                          # Not constant; overriden in settings.toml
+_MQTT_TOPIC_TURNOUT_SCRIPT = "distantsignal/%(T)s/script"    # where T is MQTT_TURNOUT
 # Turnout state is a string matching one of the JSON "states" keys.
-MQTT_TOPIC_TURNOUT_STATE  = "turnout/%(T)s/state"           # where T is MQTT_TURNOUT
+_MQTT_TOPIC_TURNOUT_STATE  = "turnout/%(T)s/state"           # where T is MQTT_TURNOUT
 # Block state is a string matching either "active" or "inactive"
-MQTT_TOPIC_BLOCk_STATE    = "block/%(B)s/state"             # where B is one of the JSON "blocks" keys
+_MQTT_TOPIC_BLOCk_STATE    = "block/%(B)s/state"             # where B is one of the JSON "blocks" keys
 
 # the current working directory (where this file is)
 CWD = ("/" + __file__).rsplit("/", 1)[
     0
 ]
 
-FONT_3x5_PATH1 = CWD + "/tom-thumb.bdf"
-FONT_3x5_PATH2 = CWD + "/tom-thumb2.bdf"
-DEFAULT_SCRIPT_PATH = CWD + "/default_script.json"
+_FONT_3x5_PATH1 = CWD + "/tom-thumb.bdf"
+_FONT_3x5_PATH2 = CWD + "/tom-thumb2.bdf"
+_DEFAULT_SCRIPT_PATH = CWD + "/default_script.json"
 
 def init() -> None:
     print("@@ init")
@@ -115,9 +118,9 @@ def init() -> None:
     try:
         mqtt_turnout = os.getenv("MQTT_TURNOUT", "").strip()
         if mqtt_turnout:
-            global MQTT_TURNOUT
-            MQTT_TURNOUT = mqtt_turnout
-            print("@@ Settings.toml: MQTT_TURNOUT set to", MQTT_TURNOUT)
+            global _MQTT_TURNOUT
+            _MQTT_TURNOUT = mqtt_turnout
+            print("@@ Settings.toml: MQTT_TURNOUT set to", _MQTT_TURNOUT)
     except Exception as e:
         print("@@ Settings.toml: Invalid MQTT_TURNOUT variable ", e)
 
@@ -148,7 +151,7 @@ def init_wifi() -> None:
         wifi.radio.connect(wifi_ssid, wifi_password)
     except ConnectionError:
         print("@@ WiFI Failed to connect to WiFi with provided credentials")
-        blink_error(CODE_WIFI_FAILED)
+        blink_error(_CODE_WIFI_FAILED)
         raise
     print("@@ WiFI OK for", wifi_ssid)
 
@@ -186,38 +189,38 @@ def init_mqtt() -> None:
         _mqtt.connect()
     except Exception as e:
         print("@@ MQTT: Failed Connecting with ", e)
-        blink_error(CODE_MQTT_FAILED, num_loop=3)
+        blink_error(_CODE_MQTT_FAILED, num_loop=3)
         _mqtt = "retry"
 
 def compute_mqtt_topics():
     # Compute all MQTT Topic keys
-    _mqtt_topics["script" ] = MQTT_TOPIC_TURNOUT_SCRIPT % { "T": MQTT_TURNOUT }
-    _mqtt_topics["turnout"] = MQTT_TOPIC_TURNOUT_STATE  % { "T": MQTT_TURNOUT }
+    _mqtt_topics["script" ] = _MQTT_TOPIC_TURNOUT_SCRIPT % { "T": _MQTT_TURNOUT }
+    _mqtt_topics["turnout"] = _MQTT_TOPIC_TURNOUT_STATE  % { "T": _MQTT_TURNOUT }
     for block_name in _script_parser.blocks():
-        _mqtt_topics["blocks"][block_name] = MQTT_TOPIC_BLOCk_STATE % { "B": block_name }
+        _mqtt_topics["blocks"][block_name] = _MQTT_TOPIC_BLOCk_STATE % { "B": block_name }
 
 def init_display():
     global _matrix, _fonts
     displayio.release_displays()
     _matrix = Matrix(
         width=64,
-        height=SY*2 if HUB75E else SY,
-        bit_depth=RGB_BIT_DEPTH,
+        height=_SY*2 if _HUB75E else _SY,
+        bit_depth=_RGB_BIT_DEPTH,
         # serpentine=True,
         # tile_rows=1,
     )
     display = _matrix.display
 
-    font1 = bitmap_font.load_font(FONT_3x5_PATH1)
-    font2 = bitmap_font.load_font(FONT_3x5_PATH2)
+    font1 = bitmap_font.load_font(_FONT_3x5_PATH1)
+    font2 = bitmap_font.load_font(_FONT_3x5_PATH2)
     _fonts.append(font1)
     _fonts.append(font2)
 
     loading_group = displayio.Group()
     t = Label(font1)
     t.text = "Loading"
-    t.x = (SX - len(t.text) * 4) // 2
-    t.y = SY // 2 - 2 + FONT_Y_OFFSET
+    t.x = (_SX - len(t.text) * 4) // 2
+    t.y = _SY // 2 - 2 + FONT_Y_OFFSET
     t.scale = 1
     t.color = 0xFFFF00
     loading_group.append(t)
@@ -235,7 +238,7 @@ def _mqtt_on_connected(client, userdata, flags, rc):
     _sub(_mqtt_topics["turnout"])
     for block_topic in _mqtt_topics["blocks"].values():
         _sub(block_topic)
-    blink_error(CODE_OK, num_loop=0)
+    blink_error(_CODE_OK, num_loop=0)
 
 def _mqtt_on_disconnected(client, userdata, rc):
     # This method is called when the client is disconnected
@@ -277,16 +280,16 @@ def _mqtt_loop():
         _mqtt.loop()
     except Exception as e:
         print("@@ MQTT: Failed with ", e)
-        blink_error(CODE_MQTT_RETRY, num_loop=1)
+        blink_error(_CODE_MQTT_RETRY, num_loop=1)
         try:
             _mqtt.reconnect()
-            blink_error(CODE_OK, num_loop=0)
+            blink_error(_CODE_OK, num_loop=0)
         except Exception as e:
             print("@@ MQTT: Reconnect failed with ", e)
-            blink_error(CODE_MQTT_FAILED, num_loop=2)
+            blink_error(_CODE_MQTT_FAILED, num_loop=2)
 
 def blink_error(error_code, num_loop=-1):
-    _led.fill(COL_LED_ERROR[error_code])
+    _led.fill(_COL_LED_ERROR[error_code])
     _led.brightness = 0.1
     time.sleep(0.5)
     # For debugging purposes, we can exit the loop by using the boot button to continue
@@ -310,7 +313,7 @@ def blink() -> None:
 def init_script():
     global _script_parser, _script_loader
 
-    _script_parser = ScriptParser(SX, SY, _fonts)
+    _script_parser = ScriptParser(_SX, _SY, _fonts)
     _script_loader = ScriptLoader(_script_parser)
     
     script = _script_loader.loadFromNVM()
@@ -320,11 +323,11 @@ def init_script():
     else:
         # Load a default script, and don't save it to the NVM
         try:
-            with open(DEFAULT_SCRIPT_PATH, "r") as file:
+            with open(_DEFAULT_SCRIPT_PATH, "r") as file:
                 script = file.read()
                 _script_loader.newScript(script, saveToNVM=False)
         except Exception as e:
-            print("@@ InitScript failed to read", DEFAULT_SCRIPT_PATH, e)
+            print("@@ InitScript failed to read", _DEFAULT_SCRIPT_PATH, e)
             raise
     del script
     gc.collect()
@@ -338,7 +341,7 @@ def loop() -> None:
     init_display()
 
     # # Sleep a few seconds at boot
-    _led.fill(COL_LED_ERROR[CODE_OK])
+    _led.fill(_COL_LED_ERROR[_CODE_OK])
     for i in range(0, 3):
         print(i)
         blink()
