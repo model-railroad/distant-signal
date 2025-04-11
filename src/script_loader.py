@@ -16,7 +16,7 @@ class ScriptLoader:
         self._parser = parser
         self._script_hash = None
         self._active_state = ""
-        self._active_blocks = {}
+        self._active_blocks = {} # map block_name:str => block_state:bool
         self._changed = True
 
     def newScript(self, script: str, saveToNVM:bool) -> bool:
@@ -51,8 +51,7 @@ class ScriptLoader:
 
     def updateDisplay(self, display) -> None:
         if self._changed and display is not None:
-            active_blocks = [ k for k,v in self._active_blocks.items() if v ]
-            self._parser.display(display, self._active_state, active_blocks)
+            self._parser.display(display, self._active_state, self._active_blocks)
             self._changed = False
 
     def _scriptHash(self, script) -> str:

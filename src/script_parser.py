@@ -316,15 +316,19 @@ class ScriptParser:
         del jsonObj
         gc.collect()
 
-    def display(self, display, activeState="", activeBlocks=[]):
+    def display(self, display, activeState="", activeBlocks={}):
+        # activeBlocks is a map block_key:str => block_state:bool
+        # a block not listed is in an unknown state and thus hidden
         for state_key in self._states:
             self._states[state_key].hidden = state_key != activeState
         blocks_all_hidden = activeState.endswith(NO_BLOCK_SUFFIX)
         for block_key in self._blocks:
             b = self._blocks[block_key]
-            is_block_active = block_key in activeBlocks
+            bs = activeBlocks.get(block_key, None)
+            is_block_active = bs == True
+            is_block_inactive = bs == False
             b["active"].hidden = blocks_all_hidden or not is_block_active
-            b["inactive"].hidden = blocks_all_hidden or is_block_active
+            b["inactive"].hidden = blocks_all_hidden or not is_block_inactive
         display.root_group = self._root
 
     def states(self):
