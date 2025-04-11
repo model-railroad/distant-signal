@@ -36,25 +36,6 @@ from adafruit_bitmap_font import bitmap_font
 from script_loader import ScriptLoader
 from script_parser import ScriptParser, FONT_Y_OFFSET
 
-_led = None
-_mqtt = None
-_matrix = None
-_fonts = []
-_mqtt_topics = {
-    "script": "",
-    "turnout": "",
-    "blocks": {
-        # block_name => topic:str
-    }
-}
-_script_parser: ScriptParser = None
-_script_loader: ScriptLoader = None
-_boot_btn = None
-_button_down = None
-_button_up = None
-_logger = logging.getLogger("DistantSignal")
-_logger.setLevel(logging.INFO)      # INFO or DEBUG
-
 # Size of the LED Matrix panel to display
 _SX = const(64)
 _SY = const(32)
@@ -94,6 +75,16 @@ _COL_LED_ERROR = {
     _CODE_MQTT_RETRY: _COL_ORANGE,
 }
 
+# Core state machine
+_CORE_INIT              = const(0)
+_CORE_WIFI_CONNECTING   = const(1)
+_CORE_WIFI_CONNECTED    = const(2)
+_CORE_MQTT_CONNECTING   = const(3)
+_CORE_MQTT_FAILED       = const(4)
+_CORE_MQTT_CONNECTED    = const(5)
+_CORE_MQTT_LOOP         = const(6)
+
+
 # MQTT Topics used:
 _MQTT_TURNOUT              = "t330"                          # Not constant; overriden in settings.toml
 _MQTT_TOPIC_TURNOUT_SCRIPT = "distantsignal/%(T)s/script"    # where T is MQTT_TURNOUT
@@ -110,6 +101,26 @@ CWD = ("/" + __file__).rsplit("/", 1)[
 _FONT_3x5_PATH1 = CWD + "/tom-thumb.bdf"
 _FONT_3x5_PATH2 = CWD + "/tom-thumb2.bdf"
 _DEFAULT_SCRIPT_PATH = CWD + "/default_script.json"
+
+_core_state = _CORE_INIT
+_led = None
+_mqtt = None
+_matrix = None
+_fonts = []
+_mqtt_topics = {
+    "script": "",
+    "turnout": "",
+    "blocks": {
+        # block_name => topic:str
+    }
+}
+_script_parser: ScriptParser = None
+_script_loader: ScriptLoader = None
+_boot_btn = None
+_button_down = None
+_button_up = None
+_logger = logging.getLogger("DistantSignal")
+_logger.setLevel(logging.INFO)      # INFO or DEBUG
 
 def init() -> None:
     print("@@ init")
@@ -137,7 +148,8 @@ def init_buttons():
     _boot_btn.switch_to_input(pull = digitalio.Pull.UP)
 
 
-def init_wifi() -> None:
+def init_wifi() -> bool:
+    # Return true if wifi is connecting (which may or may not succeed)
     print("@@ WiFI setup")
     # Get wifi AP credentials from onboard settings.toml file
     wifi_ssid = os.getenv("CIRCUITPY_WIFI_SSID", "")
@@ -149,17 +161,21 @@ def init_wifi() -> None:
 
     try:
         wifi.radio.connect(wifi_ssid, wifi_password)
+        print("@@ WiFI connecting for", wifi_ssid)
+        return True
     except ConnectionError:
         print("@@ WiFI Failed to connect to WiFi with provided credentials")
-        blink_error(_CODE_WIFI_FAILED)
-        raise
-    print("@@ WiFI OK for", wifi_ssid)
+        blink_error(_CODE_WIFI_FAILED, num_loop=5)
+        return False
 
 def init_mqtt() -> None:
-    global _mqtt
+    # Modified the global core state if the MQTT connection succeeds
+    global _core_state, _mqtt
     host = os.getenv("MQTT_BROKER_IP", "")
     if not host:
         print("@@ MQTT: disabled")
+        # This is a core feature so we treat this as an error in this project
+        blink_error(_CODE_MQTT_FAILED, num_loop=5)
         return
     port = int(os.getenv("MQTT_BROKER_PORT", 1883))
     user = os.getenv("MQTT_USERNAME", "")
@@ -186,11 +202,16 @@ def init_mqtt() -> None:
 
     try:
         print("@@ MQTT: connecting...")
+        _core_state = _CORE_MQTT_CONNECTING
         _mqtt.connect()
+        # Note that on success, the _mqtt_on_connected() callback will have been
+        # called before mqtt.connect() returns, which changes the global core state.
     except Exception as e:
         print("@@ MQTT: Failed Connecting with ", e)
-        blink_error(_CODE_MQTT_FAILED, num_loop=3)
-        _mqtt = "retry"
+        blink_error(_CODE_MQTT_FAILED, num_loop=5)
+        del _mqtt
+        _mqtt = None
+        _core_state = _CORE_MQTT_FAILED
 
 def compute_mqtt_topics():
     # Compute all MQTT Topic keys
@@ -228,6 +249,8 @@ def init_display():
 
 def _mqtt_on_connected(client, userdata, flags, rc):
     # This function will be called when the client is connected successfully to the broker.
+    global _core_state
+    _core_state = _CORE_MQTT_CONNECTED
     print("@Q MQTT: Connected")
     # Subscribe to all changes.
     def _sub(t):
@@ -268,13 +291,8 @@ def _mqtt_on_message(client, topic, message):
 
 _mqtt_retry_ts = 0
 def _mqtt_loop():
-    if not _mqtt:
-        return
-    if isinstance(_mqtt, str) and _mqtt == "retry":
-        global _mqtt_retry_ts
-        if time.time() - _mqtt_retry_ts > 5:
-            init_mqtt()
-            _mqtt_retry_ts = time.time()
+    global _mqtt, _core_state
+    if _mqtt is None:
         return
     try:
         _mqtt.loop()
@@ -286,7 +304,10 @@ def _mqtt_loop():
             blink_error(_CODE_OK, num_loop=0)
         except Exception as e:
             print("@@ MQTT: Reconnect failed with ", e)
-            blink_error(_CODE_MQTT_FAILED, num_loop=2)
+            blink_error(_CODE_MQTT_FAILED, num_loop=5)
+            del _mqtt
+            _core_state = _CORE_MQTT_FAILED
+
 
 def blink_error(error_code, num_loop=-1):
     _led.fill(_COL_LED_ERROR[error_code])
@@ -331,10 +352,11 @@ def init_script():
             raise
     del script
     gc.collect()
+    compute_mqtt_topics()
     print("@@ Mem free:", gc.mem_free())
 
-
 def loop() -> None:
+    global _core_state
     print("@@ loop")
 
     init_buttons()
@@ -348,16 +370,36 @@ def loop() -> None:
         time.sleep(1)
 
     blink()
-    init_wifi()
-    init_script()
-    compute_mqtt_topics()
-    init_mqtt()
+    init_script()   
     _script_loader.updateDisplay(_matrix.display)
 
+    _old_cs = None
     while True:
         start_ts = time.monotonic()
         blink()
-        _mqtt_loop()    # This takes 1~2 seconds
+
+        # Handle core state
+        if _core_state == _CORE_INIT:
+            if init_wifi():
+                _core_state = _CORE_WIFI_CONNECTING
+        elif _core_state == _CORE_WIFI_CONNECTING:
+            if wifi.radio.connected:
+                _core_state = _CORE_WIFI_CONNECTED
+        elif _core_state == _CORE_WIFI_CONNECTED or _core_state == _CORE_MQTT_FAILED:
+            # This sets the sets to either _CORE_MQTT_FAILED or _CORE_MQTT_CONNECTING
+            init_mqtt()
+        elif _core_state == _CORE_MQTT_CONNECTING:
+            # wait for the _mqtt_on_connected() callback to be invoked
+            # which changes state to _CORE_MQTT_CONNECTED
+            pass
+        elif _core_state == _CORE_MQTT_CONNECTED:
+            _core_state = _CORE_MQTT_LOOP
+        elif _core_state == _CORE_MQTT_LOOP:
+            _mqtt_loop()    # This takes 1~2 seconds
+        if _old_cs != _core_state:
+            print("@@ CORE STATE:", _old_cs, "=>", _core_state)
+            _old_cs = _core_state
+
         _matrix.display.refresh(minimum_frames_per_second=0)
         # if not _button_down.value or not _button_up.value:
         #     state_index = (state_index + 1) % len(states)
@@ -365,7 +407,7 @@ def loop() -> None:
         end_ts = time.monotonic()
         delta_ts = end_ts - start_ts
         if delta_ts < 1: time.sleep(0.25)  # prevent busy loop
-        print("@@ loop: ", delta_ts)
+        print("@@ loop", _core_state, ":", delta_ts)
 
 
 if __name__ == "__main__":

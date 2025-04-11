@@ -44,7 +44,7 @@ class ScriptLoader:
             self._changed = True
 
     def setBlockState(self, block:str, active:bool) -> None:
-        if self._active_blocks.get(block, False) != active:
+        if self._active_blocks.get(block, None) != active:
             self._active_blocks[block] = active
             print("@@ blocks: ", repr(self._active_blocks))
             self._changed = True
