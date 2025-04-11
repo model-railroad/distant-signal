@@ -126,12 +126,14 @@ class ScriptParser:
         self._states = {}
         self._fonts = fonts
         self._palettes = {}
+        self._settings = {}
 
     def _clearGroup(self, group) -> None:
         while group:
             group.pop()
 
     def reset(self) -> None:
+        self._settings.clear()
         self._clearGroup(self._title)
         self._blocks.clear()
         self._states.clear()
@@ -292,6 +294,9 @@ class ScriptParser:
         gc.collect()
         jsonObj = json.loads(jsonStr)
 
+        if "settings" in jsonObj:
+            self._settings.update(jsonObj["settings"])
+
         if "title" in jsonObj:
             self._title = self._parseGroup(jsonObj, jsonObj["title"])
             self._root.append(self._title)
@@ -317,7 +322,7 @@ class ScriptParser:
         del jsonObj
         gc.collect()
 
-    def display(self, display, activeState="", activeBlocks={}):
+    def updateRoot(self, activeState="", activeBlocks={}):
         # activeBlocks is a map block_key:str => block_state:bool
         # a block not listed is in an unknown state and thus hidden
         for state_key in self._states:
@@ -330,7 +335,9 @@ class ScriptParser:
             is_block_inactive = bs == False
             b["active"].hidden = blocks_all_hidden or not is_block_active
             b["inactive"].hidden = blocks_all_hidden or not is_block_inactive
-        display.root_group = self._root
+
+    def root(self):
+        return self._root
 
     def states(self):
         return self._states.keys()
@@ -338,6 +345,8 @@ class ScriptParser:
     def blocks(self):
         return self._blocks.keys()
 
+    def settings(self):
+        return self._settings
 
 #~~
 

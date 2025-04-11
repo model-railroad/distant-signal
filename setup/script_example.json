@@ -1,6 +1,6 @@
 {
     "settings": {
-        "cnx-icon": { "x": 32, "y": 20, "cnx-lost-layer": "error:no-blocks" }
+        "cnx-icon": { "x": 26, "y": 25, "cnx-lost-layer": "error:no-blocks" }
     },
     "title":  [
         {"op": "text", "x": 0, "y": 0, "t": "T330", "rgb": "#7F7F7F", "scale": 2, "font": 2 }

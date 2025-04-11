@@ -49,9 +49,9 @@ class ScriptLoader:
             print("@@ blocks: ", repr(self._active_blocks))
             self._changed = True
 
-    def updateDisplay(self, display) -> None:
-        if self._changed and display is not None:
-            self._parser.display(display, self._active_state, self._active_blocks)
+    def updateDisplay(self) -> None:
+        if self._changed:
+            self._parser.updateRoot(self._active_state, self._active_blocks)
             self._changed = False
 
     def _scriptHash(self, script) -> str:
@@ -62,10 +62,10 @@ class ScriptLoader:
     def _saveToNVM(self, script) -> bool:
         try:
             # Header format: 8-byte header with
-            # "AMBI" prefix + CRC head + CRC script + 2 bytes str length
+            # "DTSG" prefix + CRC head + CRC script + 2 bytes str length
             # followed by the script string in UTF-8.
             #              ppppCCLL
-            b = bytearray("AMBI0011".encode())
+            b = bytearray("DTSG0011".encode())
             s = script.encode()
 
             # Fixed header
@@ -92,6 +92,11 @@ class ScriptLoader:
             print("@@ Write NVM failed: ", e)
             return False
 
+    def resetNVM(self) -> None:
+        b = bytearray("DTSG0000".encode())
+        microcontroller.nvm[0 : len(b)] = b
+        print("@@ Reset NVM done")
+
     def loadFromNVM(self) -> str|None:
         # Caller must call newScript() on success
         # Returns the script on success, or None on failure.
@@ -108,7 +113,7 @@ class ScriptLoader:
             crc_f = 0
             for i in fixed:
                 crc_f = crc_f ^ i
-            if fixed[0:4].decode() != "AMBI" or crc_fix != crc_f:
+            if fixed[0:4].decode() != "DTSG" or crc_fix != crc_f:
                 print("@@ Read NVM: invalid Header/CRC", crc_fix, "in", fixed.hex())
                 return None
 
