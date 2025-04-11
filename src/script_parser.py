@@ -75,6 +75,7 @@
 #
 
 import displayio
+import gc
 import json
 import re
 import vectorio
@@ -287,6 +288,7 @@ class ScriptParser:
 
     def parseJson(self, jsonStr:str) -> None:
         self.reset()
+        gc.collect()
         jsonObj = json.loads(jsonStr)
 
         if "title" in jsonObj:
@@ -311,6 +313,8 @@ class ScriptParser:
                 self._blocks[block_key] = groups
                 self._root.append(groups["active"])
                 self._root.append(groups["inactive"])
+        del jsonObj
+        gc.collect()
 
     def display(self, display, activeState="", activeBlocks=[]):
         for state_key in self._states:

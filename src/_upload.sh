@@ -2,7 +2,7 @@
 set -e
 D="/d /f /cygdrive/f"
 C="code.py"
-E="script_parser.py script_display.py default_script.json"
+E="script_parser.py script_loader.py default_script.json"
 
 for d in $D; do
     if [[ -f "$d/$C" ]]; then

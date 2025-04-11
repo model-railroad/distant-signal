@@ -13,6 +13,7 @@
 import board
 import digitalio
 import displayio
+import gc
 import os
 import terminalio
 import time
@@ -29,27 +30,22 @@ from adafruit_matrixportal.matrix import Matrix
 from adafruit_display_text.label import Label
 from adafruit_bitmap_font import bitmap_font
 
-from script_display import ScriptDisplay
+from script_loader import ScriptLoader
 from script_parser import ScriptParser, FONT_Y_OFFSET
 
 _led = None
 _mqtt = None
 _matrix = None
 _fonts = []
-_mqtt_states = {
-    "script": {
-        "topic": "",
-    },
-    "turnout": {
-        "topic": "",
-        "state": "normal",
-    },
+_mqtt_topics = {
+    "script": "",
+    "turnout": "",
     "blocks": {
-        # block_name => { topic:str, state:str }
+        # block_name => topic:str
     }
 }
 _script_parser: ScriptParser = None
-_script_display: ScriptDisplay = None
+_script_loader: ScriptLoader = None
 _boot_btn = None
 _button_down = None
 _button_up = None
@@ -195,13 +191,10 @@ def init_mqtt() -> None:
 
 def compute_mqtt_topics():
     # Compute all MQTT Topic keys
-    _mqtt_states["script" ]["topic"] = MQTT_TOPIC_TURNOUT_SCRIPT % { "T": MQTT_TURNOUT }
-    _mqtt_states["turnout"]["topic"] = MQTT_TOPIC_TURNOUT_STATE  % { "T": MQTT_TURNOUT }
+    _mqtt_topics["script" ] = MQTT_TOPIC_TURNOUT_SCRIPT % { "T": MQTT_TURNOUT }
+    _mqtt_topics["turnout"] = MQTT_TOPIC_TURNOUT_STATE  % { "T": MQTT_TURNOUT }
     for block_name in _script_parser.blocks():
-        _mqtt_states["blocks"][block_name] = {
-            "topic": MQTT_TOPIC_BLOCk_STATE % { "B": block_name },
-            "state": "inactive",
-        }
+        _mqtt_topics["blocks"][block_name] = MQTT_TOPIC_BLOCk_STATE % { "B": block_name }
 
 def init_display():
     global _matrix, _fonts
@@ -238,10 +231,10 @@ def _mqtt_on_connected(client, userdata, flags, rc):
         if t:
             print("@@ MQTT: Subscribe to", t)
             client.subscribe(t)
-    _sub(_mqtt_states["script" ]["topic"])
-    _sub(_mqtt_states["turnout" ]["topic"])
-    for block_topic in _mqtt_states["blocks"].values():
-        _sub(block_topic["topic"])
+    _sub(_mqtt_topics["script"])
+    _sub(_mqtt_topics["turnout"])
+    for block_topic in _mqtt_topics["blocks"].values():
+        _sub(block_topic)
     blink_error(CODE_OK, num_loop=0)
 
 def _mqtt_on_disconnected(client, userdata, rc):
@@ -256,16 +249,16 @@ def _mqtt_on_message(client, topic, message):
     """
     print(f"@Q MQTT: New message on topic {topic}: {message}")
     try:
-        if topic == _mqtt_states["script" ]["topic"]:
-            if _script_display.newScript(script=message, saveToNVM=True):
+        if topic == _mqtt_topics["script"]:
+            if _script_loader.newScript(script=message, saveToNVM=True):
                 compute_mqtt_topics()
                 # TBD we need to disconnect/reconnect or resubscribe on MQTT topics
-        elif topic == _mqtt_states["turnout" ]["topic"]:
-            _mqtt_states["turnout" ]["state"] = message
+        elif topic == _mqtt_topics["turnout"]:
+            _script_loader.setState(message)
         else:
-            for block_struct in _mqtt_states["blocks"].values():
-                if topic == block_struct["topic"]:
-                    block_struct["state"] = message
+            for block_name, block_topic in _mqtt_topics["blocks"].items():
+                if topic == block_topic:
+                    _script_loader.setBlockState(block_name, message.strip().lower() == "active")
                     break
     except Exception as e:
         print(f"@@ MQTT: Failed to process {topic}: {message}", e)
@@ -315,26 +308,28 @@ def blink() -> None:
         _next_blink = 1 - _next_blink
 
 def init_script():
-    global _script_parser, _script_display
+    global _script_parser, _script_loader
 
     _script_parser = ScriptParser(SX, SY, _fonts)
-    _script_display = ScriptDisplay(_script_parser, _matrix.display)
+    _script_loader = ScriptLoader(_script_parser)
     
-    if not _script_display.loadFromNVM():
-        # Load a default script, but don't save it to the NVM
+    script = _script_loader.loadFromNVM()
+    if script is not None:
+        # Parse the NVM script, and don't save it to the NVM
+        _script_loader.newScript(script, saveToNVM=False)
+    else:
+        # Load a default script, and don't save it to the NVM
         try:
             with open(DEFAULT_SCRIPT_PATH, "r") as file:
                 script = file.read()
-                _script_display.newScript(script, saveToNVM=False)
+                _script_loader.newScript(script, saveToNVM=False)
         except Exception as e:
             print("@@ InitScript failed to read", DEFAULT_SCRIPT_PATH, e)
             raise
+    del script
+    gc.collect()
+    print("@@ Mem free:", gc.mem_free())
 
-
-def update_display():
-    t_state = _mqtt_states["turnout"]["state"]
-    b_states = [ b for b,v in _mqtt_states["blocks"].items() if v["state"] == "active" ]
-    _script_parser.display(_matrix.display, t_state, b_states)
 
 def loop() -> None:
     print("@@ loop")
@@ -354,7 +349,7 @@ def loop() -> None:
     init_script()
     compute_mqtt_topics()
     init_mqtt()
-    update_display()
+    _script_loader.updateDisplay(_matrix.display)
 
     while True:
         start_ts = time.monotonic()
@@ -363,7 +358,7 @@ def loop() -> None:
         _matrix.display.refresh(minimum_frames_per_second=0)
         # if not _button_down.value or not _button_up.value:
         #     state_index = (state_index + 1) % len(states)
-        update_display()
+        _script_loader.updateDisplay(_matrix.display)
         end_ts = time.monotonic()
         delta_ts = end_ts - start_ts
         if delta_ts < 1: time.sleep(0.25)  # prevent busy loop

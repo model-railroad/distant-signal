@@ -3,54 +3,57 @@
 # License: MIT
 
 import adafruit_hashlib
+import gc
 import microcontroller
 import struct
+import time
 
 from script_parser import ScriptParser
 
 
-class ScriptDisplay:
-    def __init__(self, parser: ScriptParser, display):
+class ScriptLoader:
+    def __init__(self, parser: ScriptParser):
         self._parser = parser
-        self._display = display
         self._script_hash = None
         self._active_state = ""
         self._active_blocks = {}
+        self._changed = True
 
     def newScript(self, script: str, saveToNVM:bool) -> bool:
         # Return true if the script has changed.
         script_hash = self._scriptHash(script)
         if script_hash != self._script_hash:
+            start_ts = time.monotonic()
             self._parser.parseJson(script)
-            if self._onChanged(script, saveToNVM):
-                self._script_hash = script_hash
-                return True
+            parse_s = time.monotonic() - start_ts
+            if saveToNVM:
+                start_ts = time.monotonic()
+                saved = self._saveToNVM(script)
+                save_s = time.monotonic() - start_ts
+                print("@@ NewScript:", parse_s, "s parsing,", save_s, "s save to NVM.")
+            else:
+                print("@@ NewScript:", parse_s, "s parsing (no NVM)")
+            self._script_hash = script_hash
+            self._changed = True
+            return True
         return False
-
-    def loadFromNVM(self) -> bool:
-        # This calls newScript() on success
-        return self._loadFromNVM()
 
     def setState(self, state:str) -> None:
         if self._active_state != state:
             self._active_state = state
-            self._update()
+            self._changed = True
 
     def setBlockState(self, block:str, active:bool) -> None:
         if self._active_blocks.get(block, False) != active:
             self._active_blocks[block] = active
-            self._update()
+            print("@@ blocks: ", repr(self._active_blocks))
+            self._changed = True
 
-    def _onChanged(self, script: str, saveToNVM:bool) -> None:
-        saved = True
-        if saveToNVM:
-            saved = self._saveToNVM(script)
-        self._update()
-        return saved
-
-    def _update(self) -> None:
-        active_blocks = [ k for k,v in self._active_blocks.items() if v ]
-        self._parser.display(self._display, self._active_state, active_blocks)
+    def updateDisplay(self, display) -> None:
+        if self._changed and display is not None:
+            active_blocks = [ k for k,v in self._active_blocks.items() if v ]
+            self._parser.display(display, self._active_state, active_blocks)
+            self._changed = False
 
     def _scriptHash(self, script) -> str:
         m = adafruit_hashlib.sha1()
@@ -82,12 +85,20 @@ class ScriptDisplay:
 
             print("@@ Write NVM:", len(b), "bytes")
             microcontroller.nvm[0 : len(b)] = b
+            del b
+            del s
+            gc.collect()
             return True
         except Exception as e:
             print("@@ Write NVM failed: ", e)
             return False
 
-    def _loadFromNVM(self) -> bool:
+    def loadFromNVM(self) -> str|None:
+        # Caller must call newScript() on success
+        # Returns the script on success, or None on failure.
+        #
+        # Note: don't call newScript() from here. This runs into "pystack exhausted"
+        # as CircuitPython has a fairly small callstack (~15 calls deep).
         try:
             fixed = microcontroller.nvm[0 : 8]
             crc_fix = fixed[4]
@@ -100,7 +111,7 @@ class ScriptDisplay:
                 crc_f = crc_f ^ i
             if fixed[0:4].decode() != "AMBI" or crc_fix != crc_f:
                 print("@@ Read NVM: invalid Header/CRC", crc_fix, "in", fixed.hex())
-                return False
+                return None
 
             slen = struct.unpack_from("!H", fixed, 6)[0]
             s = microcontroller.nvm[8 : 8 + slen]
@@ -110,12 +121,14 @@ class ScriptDisplay:
 
             if crc_s != crc_var:
                 print("@@ Read NVM: invalid Script CRC", crc_s, "in", fixed.hex(), "+", s.hex())
-                return False
+                return None
 
             script = s.decode()
             print("@@ Read NVM:", len(script), "characters")
-            self.newScript(script, saveToNVM=False)
-            return True
+            del fixed
+            del s
+            gc.collect()
+            return script
         except Exception as e:
             print("@@ Read NVM failed: ", e)
-            return False
+            return None
