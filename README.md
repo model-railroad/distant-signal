@@ -164,7 +164,7 @@ Blocks are hidden until they are set as either actie or inactive.
 
 ### Configuration Script Syntax
 
-TBD... In the meantime, check [script_example.json](setup/script_example.jsonscript_exam).
+TBD... In the meantime, check [script_example.json](setup/script_example.json).
 
 
 ## License
