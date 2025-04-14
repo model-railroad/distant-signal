@@ -9,6 +9,11 @@ MQTT_BROKER_PORT=1883
 MQTT_USERNAME="username"
 MQTT_PASSWORD="password"
 
-# DistantSignal Configuration for this panel
+# DistantSignal Configuration for this panel.
 MQTT_TURNOUT="t330"
 
+# Google Analytics 4 Configuration.
+# Leave any field empty to disable the Analytics functionality.
+GA4_CLIENT_ID=""
+GA4_MEASURE_ID=""
+GA4_API_SECRET=""

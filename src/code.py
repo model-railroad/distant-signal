@@ -17,6 +17,7 @@ import digitalio
 import displayio
 import gc
 import os
+import re
 import terminalio
 import time
 import vectorio
@@ -31,6 +32,7 @@ import neopixel
 import adafruit_connection_manager
 import adafruit_logging as logging
 import adafruit_minimqtt.adafruit_minimqtt as MQTT
+import adafruit_requests
 from adafruit_matrixportal.matrix import Matrix
 from adafruit_display_text.label import Label
 from adafruit_bitmap_font import bitmap_font
@@ -84,6 +86,12 @@ _CORE_MQTT_FAILED       = const(4)
 _CORE_MQTT_CONNECTED    = const(5)
 _CORE_MQTT_LOOP         = const(6)
 
+# Google Analytics
+_GA4_CLIENT_ID  = ""
+_GA4_DEBUG      = const(False)
+_GA4_BASE_URL   = const("https://www.google-analytics.com/debug/mp/collect") if _GA4_DEBUG else const("https://www.google-analytics.com/mp/collect")
+_GA4_POST_URL   = const("%(GA4_BASE_URL)s?api_secret=%(GA4_API_SECRET)s&measurement_id=%(GA4_MEASURE_ID)s")
+_GA4_WIFI_HB_SEC = const(15 * 60)  # 15 minutes
 
 # MQTT Topics used:
 _MQTT_TURNOUT              = "t330"                          # Not constant; overriden in settings.toml
@@ -106,6 +114,9 @@ _DEFAULT_SCRIPT_PATH = CWD + "/default_script.json"
 
 _core_state = _CORE_INIT
 _led = None
+_ga4_post_url = "pending"
+_ga4_requests = None
+_ga4_events = []
 _mqtt = None
 _matrix = None
 _fonts = []
@@ -130,6 +141,7 @@ _button_up = None
 _logger = logging.getLogger("DistantSignal")
 _logger.setLevel(logging.INFO)      # INFO or DEBUG
 
+
 def init() -> None:
     print("@@ init")
     global _led, _boot_btn
@@ -146,6 +158,7 @@ def init() -> None:
     _led = neopixel.NeoPixel(board.NEOPIXEL, 1)
     _led.brightness = 0.1
 
+
 def init_buttons():
     global _button_down, _button_up, _boot_btn
     _button_down = DigitalInOut(board.BUTTON_DOWN)
@@ -154,6 +167,31 @@ def init_buttons():
     _button_up.switch_to_input(pull=Pull.UP)
     _boot_btn = digitalio.DigitalInOut(board.D0)
     _boot_btn.switch_to_input(pull = digitalio.Pull.UP)
+
+
+def init_analytics():
+    global _ga4_post_url, _ga4_requests, _GA4_CLIENT_ID
+    _GA4_CLIENT_ID  = os.getenv("GA4_CLIENT_ID",  "").strip()
+    _ga4_measure_id = os.getenv("GA4_MEASURE_ID", "").strip()
+    _ga4_api_secret = os.getenv("GA4_API_SECRET", "").strip()
+    if _GA4_CLIENT_ID and _ga4_measure_id and _ga4_api_secret:
+        # Enable analytics
+        _ga4_post_url =  _GA4_POST_URL % {
+            "GA4_BASE_URL": _GA4_BASE_URL,
+            "GA4_API_SECRET": _ga4_api_secret,
+            "GA4_MEASURE_ID": _ga4_measure_id,
+        }
+        # Should we share the pool with MQTT?
+        pool = adafruit_connection_manager.get_radio_socketpool(wifi.radio)
+        ssl_context = adafruit_connection_manager.get_radio_ssl_context(wifi.radio)
+        _ga4_requests = adafruit_requests.Session(pool, ssl_context)
+        print("@@ GA4: Enabled")
+    else:
+        # This disables the analytics and prevents queueing events
+        _ga4_post_url = ""
+        _ga4_requests = None
+        print("@@ GA4: Disabled")
+
 
 def init_wifi() -> bool:
     # Return true if wifi is connecting (which may or may not succeed)
@@ -174,6 +212,14 @@ def init_wifi() -> bool:
         print("@@ WiFI Failed to connect to WiFi with provided credentials")
         blink_led_error(_CODE_RETRY, num_loop=5)
         return False
+
+
+def wifi_rssi() -> int|None:
+    try:
+        return wifi.radio.ap_info.rssi
+    except:
+        return None
+
 
 def init_mqtt() -> None:
     # Modified the global core state if the MQTT connection succeeds
@@ -215,11 +261,12 @@ def init_mqtt() -> None:
         # Note that on success, the _mqtt_on_connected() callback will have been
         # called before mqtt.connect() returns, which changes the global core state.
     except Exception as e:
-        print("@@ MQTT: Failed Connecting with ", e)
+        print("@@ MQTT: Failed Connecting with", e)
         blink_led_error(_CODE_RETRY, num_loop=5)
         del _mqtt
         _mqtt = None
         _core_state = _CORE_MQTT_FAILED
+
 
 def update_script_settings():
     settings = _script_parser.settings()
@@ -231,12 +278,14 @@ def update_script_settings():
     _wifi_off_tile.x = x
     _wifi_off_tile.y = y
 
+
 def compute_mqtt_topics():
     # Compute all MQTT Topic keys
     _mqtt_topics["script" ] = _MQTT_TOPIC_TURNOUT_SCRIPT % { "T": _MQTT_TURNOUT }
     _mqtt_topics["turnout"] = _MQTT_TOPIC_TURNOUT_STATE  % { "T": _MQTT_TURNOUT }
     for block_name in _script_parser.blocks():
         _mqtt_topics["blocks"][block_name] = _MQTT_TOPIC_BLOCk_STATE % { "B": block_name }
+
 
 def subscribe_mqtt_topics():
     if _mqtt is None:
@@ -255,6 +304,7 @@ def subscribe_mqtt_topics():
     _sub(_mqtt_topics["turnout"])
     for block_topic in _mqtt_topics["blocks"].values():
         _sub(block_topic)
+
 
 def init_display():
     global _matrix, _fonts, _parser_group, _wifi_off_tile, _wifi_on_tile, _loading_tile
@@ -297,6 +347,7 @@ def init_display():
 
     display.root_group = root_group
 
+
 def _mqtt_on_connected(client, userdata, flags, rc):
     # This function will be called when the client has successfully connected to the broker.
     global _core_state
@@ -304,10 +355,14 @@ def _mqtt_on_connected(client, userdata, flags, rc):
     # Actual subscription is handled by subscribe_mqtt_topics() called from main core state loop.
     print("@Q MQTT: Connected")
     blink_led_error(_CODE_OK, num_loop=0)
+    ga4_mk_event(category="mqtt", action="connected", value=wifi_rssi())
+
 
 def _mqtt_on_disconnected(client, userdata, rc):
     # This method is called when the client is disconnected
     print("@Q MQTT: Disconnected")
+    ga4_mk_event(category="mqtt", action="disconnected", value=wifi_rssi())
+
 
 def _mqtt_on_message(client, topic, message):
     """Method callled when a client's subscribed feed has a new
@@ -319,24 +374,29 @@ def _mqtt_on_message(client, topic, message):
     print(f"@Q MQTT: New message on topic {topic}: {message}")
     try:
         if topic == _mqtt_topics["script"]:
+            ga4_mk_event(category="msg", action="script")
             # Note that attempts to parse the script right here typically throw a
             # "pystack exhausted" exception due to having too many calls on the
             # very limited (16-deep) call stack.
             # Instead, we keep a reference to the script and process it in the main loop.
             _mqtt_pending_script = message
         elif topic == _mqtt_topics["turnout"]:
+            ga4_mk_event(category="msg", action="turnout", extra=message)
             _script_loader.setState(message)
         else:
             for block_name, block_topic in _mqtt_topics["blocks"].items():
                 if topic == block_topic:
-                    _script_loader.setBlockState(block_name, message.strip().lower() == "active")
+                    active = message.strip().lower() == "active"
+                    ga4_mk_event(category="msg", action="block", extra=block_name, value=1 if active else 0)
+                    _script_loader.setBlockState(block_name, active)
                     break
     except Exception as e:
         print(f"@@ MQTT: Failed to process {topic}: {message}", e)
         blink_led_error(_CODE_RETRY, num_loop=0)
 
+
 _mqtt_retry_ts = 0
-def _mqtt_loop():
+def mqtt_loop():
     global _mqtt, _core_state
     if _mqtt is None:
         return
@@ -345,17 +405,18 @@ def _mqtt_loop():
         # to complete with the default timeout = 1 value.
         _mqtt.loop()
     except Exception as e:
-        print("@@ MQTT: Failed with ", e)
+        print("@@ MQTT: Failed with", e)
         blink_led_error(_CODE_RETRY, num_loop=1)
         try:
             _mqtt.reconnect()
             blink_led_error(_CODE_OK, num_loop=0)
         except Exception as e:
-            print("@@ MQTT: Reconnect failed with ", e)
+            print("@@ MQTT: Reconnect failed with", e)
             blink_led_error(_CODE_RETRY, num_loop=1)
             del _mqtt
             _mqtt = None
             _core_state = _CORE_MQTT_FAILED
+
 
 _next_blink_wifi_ts = 0
 def display_wifi_icon(wifi: bool|None) -> None:
@@ -364,6 +425,7 @@ def display_wifi_icon(wifi: bool|None) -> None:
     _wifi_on_tile.hidden = True
     _wifi_off_tile.hidden = True
     _next_blink_wifi_ts = time.monotonic()
+
 
 def blink_wifi() -> None:
     global _next_blink_wifi_ts
@@ -386,6 +448,7 @@ def blink_wifi() -> None:
             else:
                 _next_blink_wifi_ts = now + 1
 
+
 def blink_led_error(error_code, num_loop=-1):
     _led.fill(_COL_LED_ERROR[error_code])
     _led.brightness = 0.1
@@ -398,6 +461,7 @@ def blink_led_error(error_code, num_loop=-1):
         time.sleep(1)
         num_loop -= 1
 
+
 _last_blink_led_ts = 0
 _next_blink_led = 1
 def blink_led() -> None:
@@ -407,6 +471,63 @@ def blink_led() -> None:
     if now - _last_blink_led_ts > 1:
         _last_blink_led_ts = now
         _next_blink_led = 1 - _next_blink_led
+
+
+def ga4_mk_event(category:str, action:str, extra:str="", value:int|None=None) -> None:
+    if not _ga4_post_url:
+        # Note that we start with _ga4_post_url set to a dummy value, This allows
+        # us to start queuing events before the wifi has connected.
+        # However once we initialize the GA4 service, we may disable _ga4_post_url
+        # to prevent further events from being queued.
+        return
+    if extra:
+        # Sanitize extra, only keep a-z 0-9;
+        extra = extra.lower()
+        extra = re.sub("[^a-z0-9]", "", extra)
+        extra = "___" + extra
+
+    # Only a-z 0-9 and _ are allowed in the event name
+    name = f"{_MQTT_TURNOUT}__{category}_{action}{extra}"
+
+    if value is None:
+        payload = {
+            "client_id": _GA4_CLIENT_ID,
+            "events": [ {
+                "name": name
+            } ] }
+    else:
+        payload = {
+            "client_id": _GA4_CLIENT_ID,
+            "events": [ {
+                "name": name,
+                "params": {
+                    "items": [ ],
+                    "value": value,
+                    "currency": "USD" }
+            } ] }
+    # Queue the event, don't send it immediately.
+    _ga4_events.append(payload)
+
+
+def ga4_process_queue() -> None:
+    if _ga4_requests is None or not _ga4_post_url or not _ga4_events:
+        return
+    # Sends one event, if any.
+    payload = _ga4_events.pop(0)
+    try:
+        print("@@ GA4: POST payload", payload)
+        with _ga4_requests.post(_ga4_post_url, json=payload) as response:
+            # 204 is the expected response code and we don't need to know about it
+            if response.status_code != 204:
+                print("@@ GA4: POST status", response.status_code)
+            if _GA4_DEBUG:
+                # Note: using response.content or response.json() is only useful
+                # with the debug URL to get details on success/failures.
+                print("@@ GA4: POST response", response.content.decode())
+    except Exception as e:
+        print("@@ GA4: Failed with", e)
+        blink_led_error(_CODE_RETRY)
+
 
 def init_script():
     global _script_parser, _script_loader
@@ -441,6 +562,7 @@ def init_script():
     compute_mqtt_topics()
     print("@@ Mem free:", gc.mem_free())
 
+
 if __name__ == "__main__":
     print("@@ loop")
 
@@ -461,6 +583,7 @@ if __name__ == "__main__":
     _loading_tile.hidden = True
     display_wifi_icon(False)
 
+    _next_wifi_hb_ts = 0
     _old_cs = None
     while True:
         start_ts = time.monotonic()
@@ -473,20 +596,25 @@ if __name__ == "__main__":
         elif _core_state == _CORE_WIFI_CONNECTING:
             if wifi.radio.connected:
                 _core_state = _CORE_WIFI_CONNECTED
-                display_wifi_icon(True)
-        elif _core_state == _CORE_WIFI_CONNECTED or _core_state == _CORE_MQTT_FAILED:
-            # This sets the sets to either _CORE_MQTT_FAILED or _CORE_MQTT_CONNECTING
+        elif _core_state == _CORE_WIFI_CONNECTED:
+            display_wifi_icon(True)
+            init_analytics()
+            ga4_mk_event(category="wifi", action="connected", value=wifi_rssi())
+            # This sets the core state to either _CORE_MQTT_FAILED or _CORE_MQTT_CONNECTING
+            init_mqtt()
+        elif _core_state == _CORE_MQTT_FAILED:
+            # This sets the core state to either _CORE_MQTT_FAILED or _CORE_MQTT_CONNECTING
             init_mqtt()
         elif _core_state == _CORE_MQTT_CONNECTING:
             # wait for the _mqtt_on_connected() callback to be invoked
-            # which changes state to _CORE_MQTT_CONNECTED
+            # which changes core state to _CORE_MQTT_CONNECTED
             pass
         elif _core_state == _CORE_MQTT_CONNECTED:
             subscribe_mqtt_topics()
             _core_state = _CORE_MQTT_LOOP
         elif _core_state == _CORE_MQTT_LOOP:
             # The MQTT library loop takes exactly 1 or 2 seconds to complete
-            _mqtt_loop()
+            mqtt_loop()
             # Process any pending script received by _mqtt_on_message()
             if _mqtt_pending_script is not None:
                 print("@@ Loop: Process new pending script")
@@ -496,6 +624,10 @@ if __name__ == "__main__":
                     subscribe_mqtt_topics()
                 _mqtt_pending_script = None
                 gc.collect()
+            if start_ts > _next_wifi_hb_ts:
+                ga4_mk_event(category="wifi", action="hb", value=wifi_rssi())
+                _next_wifi_hb_ts = start_ts + _GA4_WIFI_HB_SEC
+            ga4_process_queue()
         if _old_cs != _core_state:
             print("@@ CORE STATE:", _old_cs, "=>", _core_state)
             _old_cs = _core_state
@@ -506,6 +638,6 @@ if __name__ == "__main__":
         end_ts = time.monotonic()
         delta_ts = end_ts - start_ts
         if delta_ts < 1: time.sleep(0.25)  # prevent busy loop
-        print("@@ loop", _core_state, ":", delta_ts)
+        print("@@ loop", _core_state, ":", delta_ts, "s", wifi_rssi(), "dBm")
 
 #~~

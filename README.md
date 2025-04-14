@@ -62,13 +62,14 @@ cd src
 # upload all libraries (once)
 ./_lib_upload.sh adafruit_logging
 ./_lib_upload.sh adafruit_connection_manager
+./_lib_upload.sh adafruit_requests
 ./_lib_upload.sh adafruit_ticks
 ./_lib_upload.sh adafruit_minimqtt
-./_lib_upload.sh neopixel
+./_lib_upload.sh adafruit_haslib
 ./_lib_upload.sh adafruit_matrixportal
 ./_lib_upload.sh adafruit_bitmap_font
 ./_lib_upload.sh adafruit_display_text
-./_lib_upload.sh adafruit_haslib
+./_lib_upload.sh neopixel
 
 # upload the fonts (once)
 cp ../font/tom-thumb.bdf /circuitpydrive/
