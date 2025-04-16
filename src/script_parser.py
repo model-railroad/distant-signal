@@ -324,10 +324,17 @@ class ScriptParser:
 
     def updateRoot(self, activeState="", activeBlocks={}):
         # activeBlocks is a map block_key:str => block_state:bool
-        # a block not listed is in an unknown state and thus hidden
+        # A block not listed is in an unknown state and thus hidden
+
+        # activeState may have a ":no-block" suffix to hide all blocks.
+        # if so, remove the suffix as it's not part of the state name.
+        blocks_all_hidden = activeState.endswith(NO_BLOCK_SUFFIX)
+        if blocks_all_hidden:
+            activeState = activeState[:-len(NO_BLOCK_SUFFIX)]
+
         for state_key in self._states:
             self._states[state_key].hidden = state_key != activeState
-        blocks_all_hidden = activeState.endswith(NO_BLOCK_SUFFIX)
+
         for block_key in self._blocks:
             b = self._blocks[block_key]
             bs = activeBlocks.get(block_key, None)

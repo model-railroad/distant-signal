@@ -277,6 +277,9 @@ def update_script_settings():
     _wifi_on_tile.y = y
     _wifi_off_tile.x = x
     _wifi_off_tile.y = y
+    init_state = settings.get("init-state", "")
+    if init_state:
+        _script_loader.setState(init_state)
 
 
 def compute_mqtt_topics():
