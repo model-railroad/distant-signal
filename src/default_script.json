@@ -1,18 +1,22 @@
 {
     "settings": {
-        "cnx-icon": { "x": 26, "y": 25, "cnx-lost-layer": "error:no-blocks" }
+        "cnx-icon": { "x": 26, "y": 25, "cnx-lost-layer": "error:no-blocks" },
+        "init-state": "noconfig:no-blocks"
     },
     "title":  [
-        {"op": "text", "x": 0, "y": 0, "t": "No Config", "rgb": "#7F7F00" }
+        {"op": "text", "x": 0, "y": 0, "t": "Distant Signal", "rgb": "#7F7F7F" }
     ],
     "blocks": {
     },
     "states": {
-        "loading:no-blocks": [
-            {"op": "text", "x": 18, "y": 18, "t": "Loading", "rgb": "#7F7F00" }
+        "noconfig": [
+            {"op": "text", "x": 16, "y": 13, "t": "No Config", "rgb": "#7F7F00" }
         ],
-        "error:no-blocks": [
-            {"op": "text", "x": 7, "y": 18, "t": "Not Connected", "rgb": "#7F7F00" }
+        "loading": [
+            {"op": "text", "x": 18, "y": 13, "t": "Loading", "rgb": "#7F7F00" }
+        ],
+        "error": [
+            {"op": "text", "x": 7, "y": 13, "t": "Not Connected", "rgb": "#7F7F00" }
         ]
     }
 }
