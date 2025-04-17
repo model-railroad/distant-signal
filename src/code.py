@@ -82,9 +82,10 @@ _CORE_INIT              = const(0)
 _CORE_WIFI_CONNECTING   = const(1)
 _CORE_WIFI_CONNECTED    = const(2)
 _CORE_MQTT_CONNECTING   = const(3)
-_CORE_MQTT_FAILED       = const(4)
-_CORE_MQTT_CONNECTED    = const(5)
-_CORE_MQTT_LOOP         = const(6)
+_CORE_MQTT_CONNECTED    = const(4)
+_CORE_MQTT_FAILED       = const(5)
+_CORE_MQTT_RECONNECTED  = const(6)
+_CORE_MQTT_LOOP         = const(7)
 
 # Google Analytics
 _GA4_CLIENT_ID  = ""
@@ -100,6 +101,9 @@ _MQTT_TOPIC_TURNOUT_SCRIPT = "distantsignal/%(T)s/script"    # where T is MQTT_T
 _MQTT_TOPIC_TURNOUT_STATE  = "turnout/%(T)s/state"           # where T is MQTT_TURNOUT
 # Block state is a string matching either "active" or "inactive"
 _MQTT_TOPIC_BLOCk_STATE    = "block/%(B)s/state"             # where B is one of the JSON "blocks" keys
+
+DEFAULT_ERROR_STATE   = const("error")
+DEFAULT_LOADING_STATE = const("loading")
 
 # the current working directory (where this file is)
 CWD = ("/" + __file__).rsplit("/", 1)[
@@ -127,9 +131,8 @@ _mqtt_topics = {
         # block_name => topic:str
     }
 }
-_mqtt_cnx_lost_error_state = "error"
-_mqtt_cnx_lost_reconnect_state = ""
-_mqtt_cnx_lost_use_reconnect = False
+_mqtt_cnx_lost_error_state = DEFAULT_ERROR_STATE
+_mqtt_cnx_lost_reconnect_state = DEFAULT_LOADING_STATE
 _mqtt_pending_script: str = None
 _script_parser: ScriptParser = None
 _script_loader: ScriptLoader = None
@@ -272,7 +275,7 @@ def init_mqtt() -> None:
 
 
 def update_script_settings():
-    global _mqtt_cnx_lost_error_state, _mqtt_cnx_lost_reconnect_state, _mqtt_cnx_lost_use_reconnect
+    global _mqtt_cnx_lost_error_state, _mqtt_cnx_lost_reconnect_state
     settings = _script_parser.settings()
     icon_info = settings.get("cnx-icon", {})
     x = icon_info.get("x", (_SX - _wifi_on_tile.width) // 2)
@@ -281,12 +284,11 @@ def update_script_settings():
     _wifi_on_tile.y = y
     _wifi_off_tile.x = x
     _wifi_off_tile.y = y
-    init_state = settings.get("init-state", "")
+    init_state = settings.get("init-state", DEFAULT_LOADING_STATE)
     if init_state:
         _script_loader.setState(init_state)
-    _mqtt_cnx_lost_error_state = settings.get("cnx-lost-state", "error")
-    _mqtt_cnx_lost_reconnect_state = ""
-    _mqtt_cnx_lost_use_reconnect = False
+    _mqtt_cnx_lost_error_state = settings.get("cnx-lost-state", DEFAULT_ERROR_STATE)
+    _mqtt_cnx_lost_reconnect_state = init_state
 
 
 def compute_mqtt_topics():
@@ -406,9 +408,8 @@ def _mqtt_on_message(client, topic, message):
         blink_led_error(_CODE_RETRY, num_loop=0)
 
 
-_mqtt_retry_ts = 0
-def mqtt_loop():
-    global _mqtt, _core_state, _mqtt_cnx_lost_use_reconnect
+def mqtt_loop() -> None:
+    global _core_state
     if _mqtt is None:
         return
     try:
@@ -418,18 +419,21 @@ def mqtt_loop():
     except Exception as e:
         print("@@ MQTT: Failed with", e)
         blink_led_error(_CODE_RETRY, num_loop=1)
-        try:
-            _mqtt.reconnect()
-            blink_led_error(_CODE_OK, num_loop=0)
-        except Exception as e:
-            print("@@ MQTT: Reconnect failed with", e)
-            blink_led_error(_CODE_RETRY, num_loop=1)
-            del _mqtt
-            _mqtt = None
-            _core_state = _CORE_MQTT_FAILED
-            if _mqtt_cnx_lost_error_state:
-                _script_loader.setState(_mqtt_cnx_lost_error_state)
-                _mqtt_cnx_lost_use_reconnect = True
+        _core_state = _CORE_MQTT_FAILED
+
+
+def mqtt_reconnect() -> None:
+    global _core_state
+    if _mqtt is None:
+        return
+    try:
+        print("@@ MQTT: Reconnect attempt")
+        _mqtt.reconnect()
+        print("@@ MQTT: Reconnect succeed")
+        blink_led_error(_CODE_OK, num_loop=0)
+        _core_state = _CORE_MQTT_RECONNECTED
+    except Exception as e:
+        print("@@ MQTT: Reconnect failed with", e)
 
 
 _next_blink_wifi_ts = 0
@@ -617,19 +621,28 @@ if __name__ == "__main__":
             ga4_mk_event(category="wifi", action="connected", value=wifi_rssi())
             # This sets the core state to either _CORE_MQTT_FAILED or _CORE_MQTT_CONNECTING
             init_mqtt()
-        elif _core_state == _CORE_MQTT_FAILED:
-            # This sets the core state to either _CORE_MQTT_FAILED or _CORE_MQTT_CONNECTING
-            display_wifi_icon(False)
-            init_mqtt()
         elif _core_state == _CORE_MQTT_CONNECTING:
             # wait for the _mqtt_on_connected() callback to be invoked
             # which changes core state to _CORE_MQTT_CONNECTED
             pass
         elif _core_state == _CORE_MQTT_CONNECTED:
             display_wifi_icon(True)
+            if _script_loader.state() == _mqtt_cnx_lost_error_state:
+                if _mqtt_cnx_lost_reconnect_state:
+                    _script_loader.setState(_mqtt_cnx_lost_reconnect_state)
             subscribe_mqtt_topics()
-            if _mqtt_cnx_lost_use_reconnect and _mqtt_cnx_lost_reconnect_state:
-                _mqtt_cnx_lost_use_reconnect = False
+            _core_state = _CORE_MQTT_LOOP
+        elif _core_state == _CORE_MQTT_FAILED:
+            display_wifi_icon(False)
+            if _mqtt_cnx_lost_error_state:
+                _script_loader.setState(_mqtt_cnx_lost_error_state)
+            if _mqtt is None:
+                init_mqtt()
+            else:
+                mqtt_reconnect()
+        elif _core_state == _CORE_MQTT_RECONNECTED:
+            display_wifi_icon(True)
+            if _mqtt_cnx_lost_reconnect_state:
                 _script_loader.setState(_mqtt_cnx_lost_reconnect_state)
             _core_state = _CORE_MQTT_LOOP
         elif _core_state == _CORE_MQTT_LOOP:

@@ -38,6 +38,9 @@ class ScriptLoader:
             return True
         return False
 
+    def state(self) -> str:
+        return self._active_state
+
     def setState(self, state:str) -> None:
         if self._active_state != state:
             self._active_state = state
