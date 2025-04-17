@@ -127,6 +127,9 @@ _mqtt_topics = {
         # block_name => topic:str
     }
 }
+_mqtt_cnx_lost_error_state = "error"
+_mqtt_cnx_lost_reconnect_state = ""
+_mqtt_cnx_lost_use_reconnect = False
 _mqtt_pending_script: str = None
 _script_parser: ScriptParser = None
 _script_loader: ScriptLoader = None
@@ -269,6 +272,7 @@ def init_mqtt() -> None:
 
 
 def update_script_settings():
+    global _mqtt_cnx_lost_error_state, _mqtt_cnx_lost_reconnect_state, _mqtt_cnx_lost_use_reconnect
     settings = _script_parser.settings()
     icon_info = settings.get("cnx-icon", {})
     x = icon_info.get("x", (_SX - _wifi_on_tile.width) // 2)
@@ -280,6 +284,9 @@ def update_script_settings():
     init_state = settings.get("init-state", "")
     if init_state:
         _script_loader.setState(init_state)
+    _mqtt_cnx_lost_error_state = settings.get("cnx-lost-state", "error")
+    _mqtt_cnx_lost_reconnect_state = ""
+    _mqtt_cnx_lost_use_reconnect = False
 
 
 def compute_mqtt_topics():
@@ -373,7 +380,7 @@ def _mqtt_on_message(client, topic, message):
     :param str topic: The topic of the feed with a new value.
     :param str message: The new value
     """
-    global _mqtt_pending_script
+    global _mqtt_pending_script, _mqtt_cnx_lost_reconnect_state
     print(f"@Q MQTT: New message on topic {topic}: {message}")
     try:
         if topic == _mqtt_topics["script"]:
@@ -385,6 +392,7 @@ def _mqtt_on_message(client, topic, message):
             _mqtt_pending_script = message
         elif topic == _mqtt_topics["turnout"]:
             ga4_mk_event(category="msg", action="turnout", extra=message)
+            _mqtt_cnx_lost_reconnect_state = message
             _script_loader.setState(message)
         else:
             for block_name, block_topic in _mqtt_topics["blocks"].items():
@@ -400,7 +408,7 @@ def _mqtt_on_message(client, topic, message):
 
 _mqtt_retry_ts = 0
 def mqtt_loop():
-    global _mqtt, _core_state
+    global _mqtt, _core_state, _mqtt_cnx_lost_use_reconnect
     if _mqtt is None:
         return
     try:
@@ -419,15 +427,19 @@ def mqtt_loop():
             del _mqtt
             _mqtt = None
             _core_state = _CORE_MQTT_FAILED
+            if _mqtt_cnx_lost_error_state:
+                _script_loader.setState(_mqtt_cnx_lost_error_state)
+                _mqtt_cnx_lost_use_reconnect = True
 
 
 _next_blink_wifi_ts = 0
 def display_wifi_icon(wifi: bool|None) -> None:
     global _wifi_icon_state, _next_blink_wifi_ts
-    _wifi_icon_state = wifi
-    _wifi_on_tile.hidden = True
-    _wifi_off_tile.hidden = True
-    _next_blink_wifi_ts = time.monotonic()
+    if _wifi_icon_state != wifi:
+        _wifi_icon_state = wifi
+        _wifi_on_tile.hidden = True
+        _wifi_off_tile.hidden = True
+        _next_blink_wifi_ts = time.monotonic()
 
 
 def blink_wifi() -> None:
@@ -445,11 +457,11 @@ def blink_wifi() -> None:
                 _next_blink_wifi_ts = now + 0.75
     else:
         # "Wifi FAIL" blinks 5 seconds on, 2 seconds off
-            _wifi_off_tile.hidden = not _wifi_off_tile.hidden
-            if _wifi_on_tile.hidden:
-                _next_blink_wifi_ts = now + 1
-            else:
-                _next_blink_wifi_ts = now + 1
+        _wifi_off_tile.hidden = not _wifi_off_tile.hidden
+        if _wifi_on_tile.hidden:
+            _next_blink_wifi_ts = now + 1
+        else:
+            _next_blink_wifi_ts = now + 1
 
 
 def blink_led_error(error_code, num_loop=-1):
@@ -607,13 +619,18 @@ if __name__ == "__main__":
             init_mqtt()
         elif _core_state == _CORE_MQTT_FAILED:
             # This sets the core state to either _CORE_MQTT_FAILED or _CORE_MQTT_CONNECTING
+            display_wifi_icon(False)
             init_mqtt()
         elif _core_state == _CORE_MQTT_CONNECTING:
             # wait for the _mqtt_on_connected() callback to be invoked
             # which changes core state to _CORE_MQTT_CONNECTED
             pass
         elif _core_state == _CORE_MQTT_CONNECTED:
+            display_wifi_icon(True)
             subscribe_mqtt_topics()
+            if _mqtt_cnx_lost_use_reconnect and _mqtt_cnx_lost_reconnect_state:
+                _mqtt_cnx_lost_use_reconnect = False
+                _script_loader.setState(_mqtt_cnx_lost_reconnect_state)
             _core_state = _CORE_MQTT_LOOP
         elif _core_state == _CORE_MQTT_LOOP:
             # The MQTT library loop takes exactly 1 or 2 seconds to complete

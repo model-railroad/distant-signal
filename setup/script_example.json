@@ -1,6 +1,6 @@
 {
     "settings": {
-        "cnx-icon": { "x": 26, "y": 25, "cnx-lost-layer": "error:no-blocks" },
+        "cnx-icon": { "x": 26, "y": 25, "cnx-lost-state": "error:no-blocks" },
         "init-state": "loading:no-blocks"
     },
     "title":  [
