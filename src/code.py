@@ -41,7 +41,8 @@ from script_loader import ScriptLoader
 from script_parser import ScriptParser, FONT_Y_OFFSET
 
 # Size of the LED Matrix panel to display
-_SX = const(64)
+# The width can be overridden using settings.toml
+_SX = 64
 _SY = const(32)
 
 # True for a 64x32 panel with an "HUB75-E" interface that actually uses 5 addr pins (A through E)
@@ -321,14 +322,15 @@ def subscribe_mqtt_topics():
 
 def init_display():
     global _matrix, _fonts, _parser_group, _wifi_off_tile, _wifi_on_tile, _loading_tile
-    global _64X32_WITH_32SCAN
+    global _SX, _64X32_WITH_32SCAN
 
-    _64X32_WITH_32SCAN = os.getenv("_64X32_WITH_32SCAN", "False").lower() == "true"
+    _64X32_WITH_32SCAN = os.getenv("_64X32_WITH_32SCAN", str(_64X32_WITH_32SCAN)).lower() == "true"
+    _SX = int(os.getenv("_SX", _SX))
 
     displayio.release_displays()
 
     _matrix = Matrix(
-        width=64,
+        width=_SX,
         height=_SY*2 if _64X32_WITH_32SCAN else _SY,
         bit_depth=_RGB_BIT_DEPTH,
         # serpentine=True,
