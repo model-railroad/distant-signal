@@ -2,6 +2,9 @@
 CIRCUITPY_WIFI_SSID="Your WiFi SSID Here"
 CIRCUITPY_WIFI_PASSWORD="Your WiFi Password Here"
 
+# Set this to true for a 64x32 panel of type "32Scan" or "HUB75-E.
+_64X32_WITH_32SCAN=False
+
 # MQTT integration.
 # Leave the Broker IP empty to disable the MQTT functionality.
 MQTT_BROKER_IP=""

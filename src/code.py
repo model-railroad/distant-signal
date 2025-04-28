@@ -45,11 +45,12 @@ _SX = const(64)
 _SY = const(32)
 
 # True for a 64x32 panel with an "HUB75-E" interface that actually uses 5 addr pins (A through E)
-# instead of just 4 to address 32 lines. We simulate this by creating a 64x64 matrix and only 
-# using the top half (i.e. SY=32 but init Matrix with height=64).
-# For an AdaFruit 64x32 MatrixPortal-S3 compatible display, set this to False.
-# Some non-AdaFruit panels with an HUB75-E need this to True. YMMV.
-_HUB75E = const(True)
+# instead of just 4 to address 32 lines (also called a "32Scan"). We simulate this by creating a
+# 64x64 matrix and only using the top half (i.e. SY=32 but init Matrix with height=64).
+# You can override this value in the settings.toml file.
+# For an AdaFruit 64x32 MatrixPortal-S3 compatible display (also called a "16Scan"), set this to
+# False. Some non-AdaFruit panels with an HUB75-E need this to True. YMMV.
+_64X32_WITH_32SCAN = False
 
 # Number of MSB bits used in each RGB color.
 # 2 means that only RGB colors with #80 or #40 are visible, and anything lower is black.
@@ -320,10 +321,15 @@ def subscribe_mqtt_topics():
 
 def init_display():
     global _matrix, _fonts, _parser_group, _wifi_off_tile, _wifi_on_tile, _loading_tile
+    global _64X32_WITH_32SCAN
+
+    _64X32_WITH_32SCAN = os.getenv("_64X32_WITH_32SCAN", "False").lower() == "true"
+
     displayio.release_displays()
+
     _matrix = Matrix(
         width=64,
-        height=_SY*2 if _HUB75E else _SY,
+        height=_SY*2 if _64X32_WITH_32SCAN else _SY,
         bit_depth=_RGB_BIT_DEPTH,
         # serpentine=True,
         # tile_rows=1,

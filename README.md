@@ -71,9 +71,11 @@ cd src
 ./_lib_upload.sh adafruit_display_text
 ./_lib_upload.sh neopixel
 
-# upload the fonts (once)
+# upload the fonts, images, and default script (once)
 cp ../font/tom-thumb.bdf /circuitpydrive/
 cp ../font/tom-thumb2.bdf /circuitpydrive/
+cp wifi_off.bmp /circuitpydrive/
+cp wifi_on.bmp /circuitpydrive/
 
 # upload source code (after each modification)
 ./_upload.sh
