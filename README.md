@@ -5,7 +5,13 @@ model-railroad turnout on a LED Matrix Display.
 A small custom language allows one to define the panel display, and then animate it with a simple trigger.
 The color and animation script can be loaded from an MQTT broker.
 
-[<p align=center><img width="460" src="distrib/demo1.jpg" alt="Distant Signal Demonstration at Randaall Museum Model Railroad"></p>](https://www.alfray.com/trains/blog/train/2025-03-26_distant_signal_matrix_displa_08700264.html)
+<p align="center">
+  <a href="https://www.alfray.com/trains/blog/train/2025-03-26_distant_signal_matrix_displa_08700264.html">
+    <img src="distrib/demo1.jpg" alt="Distant Signal Demonstration as deployed at the Randall Museum" width="50%">
+  </a>
+  <br/>
+  [Distant Signal Demonstration at Randall Museum Model Railroad](https://www.alfray.com/trains/blog/train/2025-03-26_distant_signal_matrix_displa_08700264.html)
+</p>
 
 
 ## Hardware used for this project
