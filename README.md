@@ -10,7 +10,9 @@ The color and animation script can be loaded from an MQTT broker.
     <img src="distrib/demo1.jpg" alt="Distant Signal Demonstration as deployed at the Randall Museum" width="50%">
   </a>
   <br/>
-  [Distant Signal Demonstration at Randall Museum Model Railroad](https://www.alfray.com/trains/blog/train/2025-03-26_distant_signal_matrix_displa_08700264.html)
+  <a href="https://www.alfray.com/trains/blog/train/2025-03-26_distant_signal_matrix_displa_08700264.html">
+    Distant Signal Demonstration at Randall Museum Model Railroad
+  </a>
 </p>
 
 
