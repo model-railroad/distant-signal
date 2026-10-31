@@ -1,13 +1,13 @@
 # Distant Signal
 
-**Distant Signal** is a CircuitPython script for an ESP32 to displays the state of a remote
+**Distant Signal** is a CircuitPython script for an ESP32 to display the state of a remote
 model-railroad turnout on a LED Matrix Display.
 A small custom language allows one to define the panel display, and then animate it with a simple trigger.
 The color and animation script can be loaded from an MQTT broker.
 
 <p align="center">
   <a href="https://www.alfray.com/trains/blog/train/2025-03-26_distant_signal_matrix_displa_08700264.html">
-    <img src="distrib/demo1.jpg" alt="Distant Signal Demonstration as deployed at the Randall Museum" width="50%">
+    <img src="distrib/demo2.jpg" alt="Distant Signal Demonstration as deployed at the Randall Museum" width="50%">
   </a>
   <br/>
   <a href="https://www.alfray.com/trains/blog/train/2025-03-26_distant_signal_matrix_displa_08700264.html">
@@ -133,7 +133,7 @@ cd src
 
 ## MQTT Interaction
 
-These are the topic that `Distant Signal` subscribes to.
+These are the topics that `Distant Signal` subscribes to.
 
 #### Update Configuration Script
 
