@@ -6,14 +6,29 @@ A small custom language allows one to define the panel display, and then animate
 The color and animation script can be loaded from an MQTT broker.
 
 <p align="center">
-  <a href="https://www.alfray.com/trains/blog/train/2025-03-26_distant_signal_matrix_displa_08700264.html">
+  <a href="https://www.alfray.com/trains/distant_signal.html">
     <img src="distrib/demo2.jpg" alt="Distant Signal Demonstration as deployed at the Randall Museum" width="50%">
   </a>
   <br/>
-  <a href="https://www.alfray.com/trains/blog/train/2025-03-26_distant_signal_matrix_displa_08700264.html">
+  <a href="https://www.alfray.com/trains/distant_signal.html">
     Distant Signal Demonstration at Randall Museum Model Railroad
   </a>
+  <br/>
+  <i>(Visit the page to view a demonstration video)</i>
 </p>
+
+
+## How it Works
+
+**Distant Signal** is just a “dumb” display panel -- the panel does not know anything about
+the model railroad.
+
+The implementation is based around having a JSON file defining a series of layers that
+represent blocks or turnout, with the ability to show/hide these layers.
+Control is done indirectly via MQTT.
+
+The panel subscribes to specific MQTT topics on the MQTT broker.
+To update the panel, a server simply needs to publish messages on the desired MQTT topics.
 
 
 ## Hardware used for this project
@@ -173,9 +188,85 @@ This selects the state of a given block number.
 Blocks are hidden until they are set as either actie or inactive.
 
 
-### Configuration Script Syntax
+## Configuration Script Syntax
 
-TBD... In the meantime, check [script_example.json](setup/script_example.json).
+See [script_example.json](setup/script_example.json)
+and [script_parser.py](src/script_parser.py) for a quick overview.
+
+
+### JSON Structure
+
+The script is encoded in a JSON structure as follows:
+- At the top level, a dictionary with keys "title", "blocks", and "states" is expected.
+- At the inner level, we encode graphics primitives for drawing lines, rectangles, polygons, and text,
+  which is called a "drawing instruction list".
+
+**Title**: the "title" entry is a single drawing instruction list (see below).
+- The title is optional.
+- If present, it is always drawn first (bottom z order).
+
+**States**: the "states" entry is a dictionary of named states, each with their own drawing instruction list.
+- The states key is optional, or it can be empty.
+- States are drawn after (above) the title.
+- Distant Signal will then select one state to draw. All others are ignored.
+- For example, a panel representing a turnout would typically have 2 states: "normal" and "thrown" (or "reverse"),
+  and may define an additional error state. Only one of these states can be selected and drawn at the same time.
+
+**Blocks**: the "blocks" entry is a dictionary of named blocks.
+- Each block must have 2 inner keys: "active" and "inactive". Each one is a drawing instruction list.
+- Blocks are drawn after (above) the current state.
+- For each block defined, Distant Signal will keep an active / inactive status (matching a block being empty or
+  occupied).
+- If the current state name has the special suffix ":no-blocks", the blocks are not drawn. This is useful for example
+  for an initial state (no configuration known) or an error state.
+  For example, we would name the error state "error:no-blocks".
+
+
+### Drawing Instruction List
+
+A drawing instruction list can contain the following primitives:
+
+**Text**:  
+`{"op": "text", "x": INT|STR, "y": INT|STR, "t": "TEXT", "rgb": "#RRGGBB", "scale": [1|2], "font": [1|2]}`
+- x and y can be either a number or a simple expression with numbers and + and - operations (e.g. "64-26+5").
+- Negative numbers are interpreted as offsets from the left/bottom size of the screen.
+- "font" and "scale" are optional. When missing, they evaluate to 1.
+
+**Rectangle** (filled):  
+`{"op": "rect", "x": INT|STR, "y": INT|STR, "w": INT|STR, "h": INT|STR, "rgb": "#RRGGBB"}`
+- x, y, w, and h can be either a number or a simple expression with numbers and + and - operations (e.g. "64-26+5").
+- Negative numbers for x and y are interpreted as offsets from the left/bottom size of the screen.
+
+**Line**:  
+`{"op": "line", "x1": INT|STR, "y1": INT|STR, "x2": INT|STR, "y2": INT|STR, "rgb": "#RRGGBB"}`
+- x1, y1, x2, and y2 can be either a number or a simple expression with numbers and + and - operations (e.g. "64-26+5").
+- Negative numbers for x and y are interpreted as offsets from the left/bottom size of the screen.
+- Due to the underlying library used, lines are always 2 pixels in width.
+
+**Polygon** (filled, 3 points or more):  
+`{"op": "line", pts: [ { "x": INT|STR, "y": INT|STR } * 3+ ], "rgb": "#RRGGBB"}`
+- pts is a list of { "x": INT|STR, "y": INT|STR }.
+- x, and y can be either a number or a simple expression with numbers and + and - operations (e.g. "64-26+5").
+- Negative numbers for x and y are interpreted as offsets from the left/bottom size of the screen.
+- There must be at least 3 points, expressed in a consistent perimeter order.
+- The polygon is automatically closed.
+- The underlying library seem to reasonably handle concave polygons.
+
+**Template**:  
+`{ "tmpl": "TEMPLATE_NAME", "vars" : { "VAR1": "VALUE1", ... }, "x": INT|STR, "y": INT|STR}`
+- A template injects a top-level drawing instruction list in-place an optional x/y offset and an optional value replacement.
+- A top-level key is expected that matches the TEMPLATE_NAME. That key must be a drawing instruction list.
+- Any instruction key matching one of the "vars" keys is replaced by the corresponding value before processing.
+- x, and y are offsets applied to the template drawing instructions.
+  They can be either a number or a simple expression with numbers and + and - operations (e.g. "64-26+5").
+- Templates can include other templates; however they should not call back into themselves (infinite loop).
+
+**Comments**:  
+`{ "#": "anything here"}`
+- JSON does not allow for comments,; instead an instruction with a key "#" is interpreted as a comment and its content ignored.
+- Note: in the current implementation, any unknown instruction is ignored (e.g. lacking an "op" key or with an invalid
+  operand for "op"). This may be changed later.
+
 
 
 ## License
